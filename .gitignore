@@ -1,1 +1,62 @@
+# Ignore arquivos de sistema
+.DS_Store
+Thumbs.db
+
+# Arquivos de ambiente virtual
+venv/
 .env
+*.env
+
+# Arquivos de cache do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Configurações do VS Code
+.vscode/
+
+# Configurações de editores
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Arquivos de log
+*.log
+
+# Arquivos de banco de dados SQLite (se houver)
+*.sqlite3
+*.db
+
+# Arquivos de Jupyter Notebook checkpoints (se for o caso)
+.ipynb_checkpoints/
+
+# Dependências de pacotes
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Configurações de debug
+debug.log
+
+# Configurações de Git
+*.orig
+
+# Arquivos de lock que não precisam ser versionados
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Arquivos de cache do sistema
+*.bak
+*.swp
+*.tmp
+*.temp
+
+# Arquivos de SSH (para evitar chaves privadas)
+*.pem
+*.crt
+*.key
+
+# Certifique-se de não enviar as chaves privadas!
+secrets.json
