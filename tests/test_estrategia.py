@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import pytest
-from estrategia import calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal, verificar_lucro_minimo, atualizar_trailing_stop, verificar_trailing_stop
+from estrategia import calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal, verificar_lucro_minimo, atualizar_trailing_stop, verificar_trailing_stop, detectar_reversao_rsi
 
 
 def _make_dados(n=60, tendencia="alta"):
@@ -205,3 +205,45 @@ def test_trailing_stop_nao_cai_quando_preco_recua():
     preco_maximo, stop = atualizar_trailing_stop(470.0, None, None, stop_pct=0.05)
     preco_maximo2, stop2 = atualizar_trailing_stop(455.0, preco_maximo, stop, stop_pct=0.05)
     assert stop2 == stop  # stop não recua
+
+
+# --- Reversão RSI (reentrada após queda) ---
+
+def _make_precos_queda_e_reversao():
+    """Simula queda forte (RSI vai abaixo de 30) seguida de início de recuperação."""
+    # 40 candles de queda forte → RSI fica sobrevendido
+    precos = [500.0 - i * 4 for i in range(40)]
+    # 3 candles de recuperação → RSI começa subir
+    precos += [precos[-1] + i * 6 for i in range(1, 4)]
+    return pd.Series(precos)
+
+
+def test_detectar_reversao_rsi_subindo_de_sobrevendido():
+    precos = _make_precos_queda_e_reversao()
+    assert detectar_reversao_rsi(precos) is True
+
+
+def test_detectar_reversao_rsi_ainda_caindo():
+    # Queda contínua sem reversão → RSI sobrevendido mas ainda caindo
+    precos = pd.Series([500.0 - i * 4 for i in range(43)])
+    assert detectar_reversao_rsi(precos) is False
+
+
+def test_detectar_reversao_rsi_zona_neutra():
+    # Mercado lateral → RSI neutro, não é reversão de sobrevendido
+    precos = pd.Series([450.0 + (i % 5) for i in range(43)])
+    assert detectar_reversao_rsi(precos) is False
+
+
+def test_detectar_reversao_rsi_dados_insuficientes():
+    # Menos candles que o período mínimo → False por segurança
+    precos = pd.Series([440.0] * 10)
+    assert detectar_reversao_rsi(precos) is False
+
+
+def test_avaliar_sinal_compra_por_reversao_rsi():
+    # MA7 ainda abaixo da MA40 (queda), mas RSI sinalizando reversão → COMPRAR
+    precos = _make_precos_queda_e_reversao()
+    dados = pd.DataFrame({"fechamento": precos})
+    sinal = avaliar_sinal(dados, posicao=False)
+    assert sinal == "COMPRAR"

@@ -55,6 +55,20 @@ def verificar_lucro_minimo(preco_atual: float, preco_entrada: float, taxa_pct: f
     return preco_atual > preco_entrada * (1 + 2 * taxa_pct)
 
 
+def detectar_reversao_rsi(
+    precos: pd.Series,
+    periodo: int = 14,
+    limite_sobrevendido: int = 30,
+) -> bool:
+    """Retorna True se o RSI estava abaixo do limite sobrevendido e começou a subir.
+    Sinal de reentrada após queda brusca — detecta o início da recuperação."""
+    if len(precos) < periodo + 2:
+        return False
+    rsi_atual = calcular_rsi(precos, periodo)
+    rsi_anterior = calcular_rsi(precos.iloc[:-1], periodo)
+    return rsi_anterior < limite_sobrevendido and rsi_atual > rsi_anterior
+
+
 def calcular_quantidade(saldo_brl: float, preco_atual: float, percentual: float = 0.90) -> float:
     """Calcula a quantidade de ativo a comprar com base no saldo disponível."""
     return round((saldo_brl * percentual) / preco_atual, 3)
@@ -80,7 +94,13 @@ def avaliar_sinal(
             return "VENDER"
         return None
 
+    # Sinal 1: cruzamento de médias em zona neutra de RSI
     if media_rapida > media_devagar and rsi_sobrevendido < rsi < rsi_sobrecomprado:
+        return "COMPRAR"
+
+    # Sinal 2: reversão de RSI sobrevendido (reentrada após queda brusca)
+    if detectar_reversao_rsi(fechamento, periodo=14, limite_sobrevendido=rsi_sobrevendido):
+        print(f"Sinal de reversao RSI detectado (RSI subindo de sobrevendido)")
         return "COMPRAR"
 
     return None
