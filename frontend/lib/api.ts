@@ -91,6 +91,8 @@ export const fetchOperacoes = (data?: string) => {
 
 export const fetchReserva = () => apiFetch<Reserva>("/reserva");
 
+export const fetchCotacao = () => apiFetch<{ usd_brl: number }>("/cotacao");
+
 export interface Candle {
   time: number;
   open: number;

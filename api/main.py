@@ -165,6 +165,19 @@ def get_reserva():
 
 
 # ---------------------------------------------------------------------------
+# GET /cotacao
+# ---------------------------------------------------------------------------
+
+@app.get("/cotacao", dependencies=[Depends(_verificar_token)])
+def get_cotacao():
+    api_key = os.getenv("KEY_BINANCE", "")
+    api_secret = os.getenv("SECRET_BINANCE", "")
+    cliente = BinanceClient(api_key, api_secret)
+    ticker = cliente.get_symbol_ticker(symbol="USDTBRL")
+    return {"usd_brl": float(ticker["price"])}
+
+
+# ---------------------------------------------------------------------------
 # GET /candles/{simbolo}
 # ---------------------------------------------------------------------------
 
