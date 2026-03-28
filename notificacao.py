@@ -4,10 +4,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-EVOLUTION_URL = os.getenv("EVOLUTION_URL", "https://evolution.wbdigitalsolutions.com")
-EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "EV0_984A52DF63B9CD6606C3C8ADE89A739FEB04E55E_2026")
-EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "wbdigital")
-WHATSAPP_NUMBER = os.getenv("WHATSAPP_NUMBER", "5511982864581")
+EVOLUTION_URL = os.getenv("EVOLUTION_URL")
+EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY")
+EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE")
+WHATSAPP_NUMBER = os.getenv("WHATSAPP_NUMBER")
 
 
 def enviar_whatsapp(mensagem: str):

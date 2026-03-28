@@ -60,3 +60,5 @@ pip-delete-this-directory.txt
 
 # Certifique-se de não enviar as chaves privadas!
 secrets.json
+posicao.json
+log_operacoes.txt
