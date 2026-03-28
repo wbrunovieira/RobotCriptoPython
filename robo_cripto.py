@@ -107,8 +107,10 @@ def executar_compra(cliente, par, saldo_brl, preco_atual):
     step_size = par["step_size"]
 
     saldo_disponivel = calcular_saldo_disponivel(saldo_brl, TETO_SALDO_PCT)
-    quantidade = calcular_quantidade(saldo_disponivel, preco_atual, PERCENTUAL_COMPRA)
-    quantidade_fmt = float(Decimal(str(quantidade)).quantize(Decimal(step_size), rounding=ROUND_DOWN))
+    valor_a_usar = saldo_disponivel * PERCENTUAL_COMPRA
+    quantidade_fmt = float(
+        Decimal(str(valor_a_usar / preco_atual)).quantize(Decimal(step_size), rounding=ROUND_DOWN)
+    )
 
     cliente.create_order(
         symbol=simbolo,
