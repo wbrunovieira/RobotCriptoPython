@@ -13,7 +13,7 @@
 - [x] Log de operações com preço e timestamp
 - [x] Soft stop (Ctrl+C encerra limpo após ciclo atual)
 - [x] Sincronização automática de timestamp com servidor Binance
-- [x] Testes automatizados TDD (119 testes)
+- [x] Testes automatizados TDD (134 testes)
 - [x] Stats diários em `stats/YYYY-MM-DD.json` (base para dashboard e fiscal)
 
 ---
@@ -44,10 +44,10 @@
 ### 4. Ajuste Automático de Parâmetros
 > Depende do backtesting (item 3).
 
-- [ ] Testar combinações de períodos de médias (ex: 5/20, 7/40, 10/50)
-- [ ] Testar diferentes níveis de RSI sobrecomprado/sobrevendido
-- [ ] Testar diferentes percentuais de stop loss
-- [ ] Selecionar automaticamente os parâmetros com melhor resultado histórico
+- [x] Testar combinações de períodos de médias (ex: 5/20, 7/40, 10/50)
+- [x] Testar diferentes níveis de RSI sobrecomprado/sobrevendido
+- [x] Testar diferentes percentuais de stop loss
+- [x] Selecionar automaticamente os parâmetros com melhor resultado histórico
 
 ### 5. Múltiplos Pares
 
