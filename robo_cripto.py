@@ -287,7 +287,18 @@ def ciclo_par(cliente, par, saldo_brl, saldo_ativo):
         print(f"[{simbolo}] Sem sinal.")
 
 
+def _gravar_status(rodando: bool = True):
+    import json as _json
+    timestamp = pd.Timestamp.now(tz="America/Sao_Paulo").strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open("status.json", "w") as f:
+            _json.dump({"rodando": rodando, "ultimo_ciclo": timestamp, "versao": "1.0.0"}, f)
+    except Exception:
+        pass
+
+
 def ciclo(cliente):
+    _gravar_status()
     print(f"\n=== {pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%Y-%m-%d %H:%M:%S')} ===")
 
     saldo_brl, saldos = obter_saldos(cliente)
