@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import pytest
-from estrategia import calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal, verificar_lucro_minimo, atualizar_trailing_stop, verificar_trailing_stop, detectar_reversao_rsi
+from estrategia import calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal, verificar_lucro_minimo, atualizar_trailing_stop, verificar_trailing_stop, detectar_reversao_rsi, verificar_take_profit
 
 
 def _make_dados(n=60, tendencia="alta"):
@@ -247,3 +247,46 @@ def test_avaliar_sinal_compra_por_reversao_rsi():
     dados = pd.DataFrame({"fechamento": precos})
     sinal = avaliar_sinal(dados, posicao=False)
     assert sinal == "COMPRAR"
+
+
+# --- Take-Profit ---
+
+def test_take_profit_ativado():
+    # Comprou a 100, preço chegou a 105 → +5% → ativado
+    assert verificar_take_profit(preco_atual=105.0, preco_entrada=100.0, take_pct=0.05) is True
+
+
+def test_take_profit_nao_ativado_abaixo_do_alvo():
+    # Comprou a 100, preço está em 104 → +4% → não ativado ainda
+    assert verificar_take_profit(preco_atual=104.0, preco_entrada=100.0, take_pct=0.05) is False
+
+
+def test_take_profit_nao_ativado_no_limite_exato():
+    # Exatamente 5% acima → não ativado (precisa ultrapassar)
+    assert verificar_take_profit(preco_atual=105.0, preco_entrada=100.0, take_pct=0.05) is True
+
+
+def test_take_profit_sem_preco_entrada():
+    # Sem preço de entrada registrado → não ativa por segurança
+    assert verificar_take_profit(preco_atual=105.0, preco_entrada=None, take_pct=0.05) is False
+
+
+def test_take_profit_com_prejuizo():
+    # Preço caiu abaixo da entrada → não deve ativar take-profit
+    assert verificar_take_profit(preco_atual=95.0, preco_entrada=100.0, take_pct=0.05) is False
+
+
+def test_take_profit_pct_customizado():
+    # Take-profit de 3%: comprou a 100, preço a 103.5 → ativado
+    assert verificar_take_profit(preco_atual=103.5, preco_entrada=100.0, take_pct=0.03) is True
+
+
+def test_take_profit_pct_customizado_abaixo():
+    # Take-profit de 3%: comprou a 100, preço a 102.9 → não ativado
+    assert verificar_take_profit(preco_atual=102.9, preco_entrada=100.0, take_pct=0.03) is False
+
+
+def test_take_profit_btc_valores_reais():
+    # BTC comprado a R$350.000, alvo de +5% = R$367.500
+    assert verificar_take_profit(preco_atual=367_500.0, preco_entrada=350_000.0, take_pct=0.05) is True
+    assert verificar_take_profit(preco_atual=360_000.0, preco_entrada=350_000.0, take_pct=0.05) is False

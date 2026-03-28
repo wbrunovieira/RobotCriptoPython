@@ -47,6 +47,13 @@ def verificar_trailing_stop(preco_atual: float, stop_price: float) -> bool:
     return preco_atual <= stop_price
 
 
+def verificar_take_profit(preco_atual: float, preco_entrada: float, take_pct: float = 0.05) -> bool:
+    """Retorna True se o preço atingiu ou superou o alvo de lucro take_pct acima do preço de entrada."""
+    if preco_entrada is None:
+        return False
+    return preco_atual >= preco_entrada * (1 + take_pct)
+
+
 def verificar_lucro_minimo(preco_atual: float, preco_entrada: float, taxa_pct: float = 0.001) -> bool:
     """Retorna True se o lucro cobre as taxas de compra + venda (round trip = 2 * taxa_pct).
     Se preco_entrada for None, permite a venda por segurança."""

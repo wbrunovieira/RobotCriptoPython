@@ -15,6 +15,7 @@ from estrategia import (
     verificar_lucro_minimo,
     atualizar_trailing_stop,
     verificar_trailing_stop,
+    verificar_take_profit,
 )
 from notificacao import enviar_whatsapp
 from stats import iniciar_stats_do_dia, registrar_compra, registrar_venda, calcular_resumo, carregar_stats_do_dia
@@ -28,6 +29,7 @@ secret_key = os.getenv("SECRET_BINANCE")
 
 PERIODO_CANDLE = "15m"
 STOP_PCT = 0.05
+TAKE_PROFIT_PCT = 0.05   # vende ao atingir +5% do preço de entrada
 TETO_SALDO_PCT = 0.60    # cada par pode usar até 60% do BRL disponível
 PERCENTUAL_COMPRA = 0.90  # dentro do teto, usa 90%
 MAX_TENTATIVAS = 3
@@ -200,7 +202,7 @@ def _verificar_reserva_usdc(cliente, lucro_op: float, timestamp: str):
 
 
 def monitorar_stop_par(cliente, par):
-    """Checagem de trailing stop para um par específico."""
+    """Checagem de take-profit e trailing stop para um par específico."""
     simbolo = par["simbolo"]
     estado = carregar_posicao(arquivo=arquivo_posicao(simbolo))
     if not estado["posicao"]:
@@ -212,6 +214,29 @@ def monitorar_stop_par(cliente, par):
         stop_price = estado["stop_price"]
         preco_entrada = estado["preco_entrada"]
 
+        # --- Take-profit: vende ao atingir +TAKE_PROFIT_PCT e reavalia reentrada ---
+        if verificar_take_profit(preco_atual, preco_entrada, TAKE_PROFIT_PCT):
+            variacao = ((preco_atual / preco_entrada) - 1) * 100
+            print(f"[{simbolo}][tp] TAKE-PROFIT! Preco: R${preco_atual:.2f} (+{variacao:.2f}%)")
+            enviar_whatsapp(
+                f"TAKE-PROFIT {simbolo}\n"
+                f"Entrada: R${preco_entrada:.2f} | Atual: R${preco_atual:.2f}\n"
+                f"Ganho: +{variacao:.2f}%"
+            )
+            _, saldos = obter_saldos(cliente)
+            executar_venda(cliente, par, saldos.get(par["ativo"], 0.0), preco_atual, motivo="Take-Profit")
+
+            # Reavalia reentrada imediata: se ainda há sinal de compra, recompra
+            saldo_brl, _ = obter_saldos(cliente)
+            dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
+            if not dados.empty:
+                sinal = avaliar_sinal(dados, posicao=False)
+                if sinal == "COMPRAR":
+                    print(f"[{simbolo}][tp] Reentrada imediata após take-profit.")
+                    executar_compra(cliente, par, saldo_brl, preco_atual)
+            return
+
+        # --- Trailing stop: atualiza máximo e verifica queda ---
         novo_maximo, novo_stop = atualizar_trailing_stop(preco_atual, preco_maximo, stop_price, STOP_PCT)
 
         if novo_maximo != preco_maximo or novo_stop != stop_price:
