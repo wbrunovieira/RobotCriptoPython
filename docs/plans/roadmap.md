@@ -19,21 +19,6 @@
 
 ## Próximas Funcionalidades
 
-### 7. Operação 24h em Servidor com Resiliência
-- [ ] Logs organizados por dia (ex: `logs/2026-03-28.log`)
-- [ ] Histórico diário: saldo inicial, operações do dia, lucro/prejuízo, saldo final
-- [ ] Ao reiniciar, carregar histórico do dia atual e retomar operações sem perder contexto
-- [ ] Persistir saldo inicial do dia em disco para calcular resultado diário corretamente
-- [ ] Script de deploy para servidor Linux (systemd service para reinício automático)
-- [ ] Healthcheck: se o bot ficar mais de 2h sem ciclo, notifica via WhatsApp
-
-### 6. Reserva em USDC
-- [ ] Calcular lucro real após cada venda (preço venda - preço compra - taxas)
-- [ ] Acumular lucros em BRL até atingir R$30 mínimo para conversão
-- [ ] Converter 50% do lucro acumulado de BRL para USDC automaticamente
-- [ ] Registrar reserva acumulada em USDC no log e no relatório fiscal
-- [ ] Alertar via WhatsApp o valor convertido e reserva total em USDC
-
 ### 1. Relatório Fiscal
 - [ ] Calcular lucro/prejuízo por operação (preço de compra vs venda)
 - [ ] Calcular imposto devido (15% a 22,5% sobre ganhos acima de R$35.000/mês)
@@ -64,3 +49,43 @@
 - [ ] Testar diferentes níveis de RSI sobrecomprado/sobrevendido
 - [ ] Testar diferentes percentuais de stop loss
 - [ ] Selecionar automaticamente os parâmetros com melhor resultado histórico
+
+### 6. Reserva em USDC
+- [ ] Calcular lucro real após cada venda (preço venda - preço compra - taxas)
+- [ ] Acumular lucros em BRL até atingir R$30 mínimo para conversão
+- [ ] Converter 50% do lucro acumulado de BRL para USDC automaticamente
+- [ ] Registrar reserva acumulada em USDC no log e no relatório fiscal
+- [ ] Alertar via WhatsApp o valor convertido e reserva total em USDC
+
+### 7. Frontend Web
+- [ ] API REST em FastAPI expondo: status do bot, saldo, posição atual, histórico de operações
+- [ ] Dashboard em Next.js com atualização em tempo real (WebSocket ou polling)
+- [ ] Página principal: status, saldo BRL/USDC/SOL, lucro do dia e acumulado
+- [ ] Gráfico de preço da SOL com marcações de compra/venda do bot
+- [ ] Indicadores em tempo real: MA7, MA40, RSI, trailing stop atual
+- [ ] Histórico de operações com filtro por data e par
+- [ ] Relatório fiscal exportável direto pelo painel
+- [ ] Autenticação simples (login/senha) para proteger o painel
+- [ ] Deploy em subdomínio: `cripto.wbdigitalsolutions.com`
+
+### 8. Deploy no Servidor 24h
+- [ ] Containerizar o bot em Docker
+- [ ] Docker Compose com bot + API FastAPI + frontend Next.js
+- [ ] Nginx reverse proxy para `cripto.wbdigitalsolutions.com` com SSL Let's Encrypt
+- [ ] Logs organizados por dia em volume Docker persistente
+- [ ] Ao reiniciar container, carregar histórico do dia e retomar operações
+- [ ] Persistir saldo inicial do dia em disco para calcular resultado diário
+- [ ] Healthcheck: se o bot ficar mais de 2h sem ciclo, notifica via WhatsApp
+- [ ] Servidor: Contabo VPS 45.90.123.190 (6 cores, 11GB RAM, 100GB NVMe)
+- [ ] Diretório do projeto: `/opt/cripto-robot/`
+
+---
+
+## Decisões de Arquitetura
+
+- **Moeda operacional:** BRL (compra/venda de SOL)
+- **Reserva de valor:** USDC (50% do lucro acumulado acima de R$30)
+- **Caixa de SOL:** zero entre operações — SOL só quando bot sinalizar compra
+- **Logs:** um arquivo por dia em `logs/YYYY-MM-DD.log`
+- **Frontend stack:** FastAPI (backend) + Next.js (frontend)
+- **Infraestrutura:** Docker + Nginx + Let's Encrypt no servidor Contabo existente
