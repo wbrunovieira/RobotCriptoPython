@@ -19,15 +19,15 @@
 
 ## Próximas Funcionalidades
 
-### 1. Stats Diários
+### ~~1. Stats Diários~~ ✅
 > Base para dashboard, relatório fiscal e frontend web. Cada dia gera um arquivo `stats/YYYY-MM-DD.json`.
 
-- [ ] Criar `stats/YYYY-MM-DD.json` por dia com saldo inicial, operações e resumo
-- [ ] Registrar compra: preço, quantidade, total BRL, timestamp
-- [ ] Registrar venda: preço, quantidade, lucro BRL, lucro %, timestamp
-- [ ] Calcular resumo: total operações, % acerto, maior ganho, maior perda
-- [ ] Ao reiniciar, carregar stats do dia atual e retomar sem perder histórico
-- [ ] Persistir saldo inicial apenas na primeira execução do dia
+- [x] Criar `stats/YYYY-MM-DD.json` por dia com saldo inicial, operações e resumo
+- [x] Registrar compra: preço, quantidade, total BRL, timestamp
+- [x] Registrar venda: preço, quantidade, lucro BRL, lucro %, timestamp
+- [x] Calcular resumo: total operações, % acerto, maior ganho, maior perda
+- [x] Ao reiniciar, carregar stats do dia atual e retomar sem perder histórico
+- [x] Persistir saldo inicial apenas na primeira execução do dia
 
 ### 2. Dashboard no Terminal
 > Alimentado pelos stats diários (item 1).
