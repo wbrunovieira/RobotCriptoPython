@@ -24,6 +24,29 @@ def verificar_stop_loss(preco_atual: float, preco_entrada: float, limite_pct: fl
     return preco_atual < preco_entrada * (1 - limite_pct)
 
 
+def atualizar_trailing_stop(
+    preco_atual: float,
+    preco_maximo: float,
+    stop_atual: float,
+    stop_pct: float = 0.05,
+) -> tuple:
+    """Atualiza o trailing stop conforme o preço sobe.
+    Se o preço superar o máximo histórico, sobe o stop junto.
+    O stop nunca recua — só avança quando o preço bate novo topo."""
+    if preco_maximo is None or preco_atual > preco_maximo:
+        novo_maximo = preco_atual
+        novo_stop = preco_atual * (1 - stop_pct)
+        return novo_maximo, novo_stop
+    return preco_maximo, stop_atual
+
+
+def verificar_trailing_stop(preco_atual: float, stop_price: float) -> bool:
+    """Retorna True se o preço caiu até ou abaixo do trailing stop."""
+    if stop_price is None:
+        return False
+    return preco_atual <= stop_price
+
+
 def verificar_lucro_minimo(preco_atual: float, preco_entrada: float, taxa_pct: float = 0.001) -> bool:
     """Retorna True se o lucro cobre as taxas de compra + venda (round trip = 2 * taxa_pct).
     Se preco_entrada for None, permite a venda por segurança."""

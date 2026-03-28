@@ -24,3 +24,19 @@ def test_salvar_posicao_sem_preco(tmp_path):
     resultado = carregar_posicao(arquivo=arquivo)
     assert resultado["posicao"] is False
     assert resultado["preco_entrada"] is None
+
+
+def test_salvar_e_carregar_trailing_stop(tmp_path):
+    arquivo = str(tmp_path / "posicao.json")
+    salvar_posicao(True, 440.0, preco_maximo=460.0, stop_price=437.0, arquivo=arquivo)
+    resultado = carregar_posicao(arquivo=arquivo)
+    assert resultado["preco_maximo"] == 460.0
+    assert resultado["stop_price"] == 437.0
+
+
+def test_carregar_trailing_stop_inexistente_retorna_none(tmp_path):
+    arquivo = str(tmp_path / "posicao.json")
+    salvar_posicao(True, 440.0, arquivo=arquivo)
+    resultado = carregar_posicao(arquivo=arquivo)
+    assert resultado["preco_maximo"] is None
+    assert resultado["stop_price"] is None

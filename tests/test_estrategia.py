@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import pytest
-from estrategia import calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal, verificar_lucro_minimo
+from estrategia import calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal, verificar_lucro_minimo, atualizar_trailing_stop, verificar_trailing_stop
 
 
 def _make_dados(n=60, tendencia="alta"):
@@ -137,3 +137,71 @@ def test_lucro_minimo_exatamente_no_limite():
 def test_lucro_minimo_taxa_customizada():
     # Taxa customizada de 0,075% (com BNB) → round trip 0,15%
     assert verificar_lucro_minimo(preco_atual=440.67, preco_entrada=440.0, taxa_pct=0.00075) is True
+
+
+# --- Trailing Stop Loss ---
+
+def test_trailing_stop_atualiza_quando_preco_sobe():
+    # Preço subiu acima do máximo → max e stop devem subir
+    novo_maximo, novo_stop = atualizar_trailing_stop(
+        preco_atual=470.0, preco_maximo=460.0, stop_atual=437.0, stop_pct=0.05
+    )
+    assert novo_maximo == 470.0
+    assert novo_stop == pytest.approx(470.0 * 0.95)
+
+
+def test_trailing_stop_nao_atualiza_quando_preco_cai():
+    # Preço caiu abaixo do máximo → max e stop permanecem
+    novo_maximo, novo_stop = atualizar_trailing_stop(
+        preco_atual=450.0, preco_maximo=460.0, stop_atual=437.0, stop_pct=0.05
+    )
+    assert novo_maximo == 460.0
+    assert novo_stop == 437.0
+
+
+def test_trailing_stop_nao_atualiza_quando_preco_igual_ao_maximo():
+    novo_maximo, novo_stop = atualizar_trailing_stop(
+        preco_atual=460.0, preco_maximo=460.0, stop_atual=437.0, stop_pct=0.05
+    )
+    assert novo_maximo == 460.0
+    assert novo_stop == 437.0
+
+
+def test_trailing_stop_inicializa_quando_sem_maximo():
+    # Primeira verificação após compra: preco_maximo e stop_atual são None
+    novo_maximo, novo_stop = atualizar_trailing_stop(
+        preco_atual=440.0, preco_maximo=None, stop_atual=None, stop_pct=0.05
+    )
+    assert novo_maximo == 440.0
+    assert novo_stop == pytest.approx(440.0 * 0.95)
+
+
+def test_verificar_trailing_stop_ativado():
+    # Preço caiu até ou abaixo do stop → deve vender
+    assert verificar_trailing_stop(preco_atual=435.0, stop_price=437.0) is True
+
+
+def test_verificar_trailing_stop_nao_ativado():
+    # Preço ainda acima do stop → aguarda
+    assert verificar_trailing_stop(preco_atual=450.0, stop_price=437.0) is False
+
+
+def test_verificar_trailing_stop_sem_stop_price():
+    # Stop não configurado → não dispara
+    assert verificar_trailing_stop(preco_atual=435.0, stop_price=None) is False
+
+
+def test_trailing_stop_sobe_conforme_preco_sobe():
+    # Simula sequência de altas: stop deve subir junto
+    preco_maximo, stop = None, None
+    for preco in [440.0, 450.0, 460.0, 470.0]:
+        preco_maximo, stop = atualizar_trailing_stop(preco, preco_maximo, stop, stop_pct=0.05)
+    assert preco_maximo == 470.0
+    assert stop == pytest.approx(470.0 * 0.95)
+
+
+def test_trailing_stop_nao_cai_quando_preco_recua():
+    # Após alta, preço recua mas stop não deve cair
+    preco_maximo, stop = atualizar_trailing_stop(470.0, None, None, stop_pct=0.05)
+    preco_maximo2, stop2 = atualizar_trailing_stop(455.0, preco_maximo, stop, stop_pct=0.05)
+    assert stop2 == stop  # stop não recua

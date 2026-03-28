@@ -7,7 +7,13 @@ from decimal import Decimal, ROUND_DOWN
 from dotenv import load_dotenv
 
 from persistencia import salvar_posicao, carregar_posicao
-from estrategia import calcular_quantidade, avaliar_sinal, verificar_stop_loss, verificar_lucro_minimo
+from estrategia import (
+    calcular_quantidade,
+    avaliar_sinal,
+    verificar_lucro_minimo,
+    atualizar_trailing_stop,
+    verificar_trailing_stop,
+)
 from notificacao import enviar_whatsapp
 
 load_dotenv()
@@ -18,9 +24,11 @@ secret_key = os.getenv("SECRET_BINANCE")
 CODIGO_OPERADO = "SOLBRL"
 ATIVO_OPERADO = "SOL"
 PERIODO_CANDLE = Client.KLINE_INTERVAL_1HOUR
-STOP_LOSS_PCT = 0.05
+STOP_PCT = 0.05
 PERCENTUAL_SALDO = 0.90
 MAX_TENTATIVAS = 3
+INTERVALO_MONITORAMENTO = 60       # segundos entre cada checagem de stop
+INTERVALO_ESTRATEGIA = 60 * 60    # 1 hora entre avaliações completas
 
 
 def criar_cliente():
@@ -47,6 +55,11 @@ def pegando_dados(cliente, codigo, intervalo):
     except Exception as e:
         print(f"Erro ao pegar dados: {e}")
         return pd.DataFrame()
+
+
+def obter_preco_atual(cliente, codigo):
+    ticker = cliente.get_symbol_ticker(symbol=codigo)
+    return float(ticker["price"])
 
 
 def obter_saldos(cliente):
@@ -86,15 +99,17 @@ def executar_compra(cliente, saldo_brl, preco_atual):
         quantity=quantidade,
     )
     log_operacao("COMPRA", quantidade, preco_atual)
+    preco_maximo, stop_price = atualizar_trailing_stop(preco_atual, None, None, STOP_PCT)
+    salvar_posicao(True, preco_atual, preco_maximo=preco_maximo, stop_price=stop_price)
     msg = (
         f"COMPRA SOL\n"
         f"Qtd: {quantidade} SOL\n"
         f"Preco: R${preco_atual:.2f}\n"
+        f"Stop inicial: R${stop_price:.2f}\n"
         f"Total: R${quantidade * preco_atual:.2f}"
     )
     print(msg)
     enviar_whatsapp(msg)
-    salvar_posicao(True, preco_atual)
     return True
 
 
@@ -107,6 +122,7 @@ def executar_venda(cliente, saldo_sol, preco_atual, motivo="Sinal de venda"):
         quantity=float(quantidade_formatada),
     )
     log_operacao("VENDA", float(quantidade_formatada), preco_atual)
+    salvar_posicao(False, None)
     msg = (
         f"VENDA SOL ({motivo})\n"
         f"Qtd: {quantidade_formatada} SOL\n"
@@ -114,8 +130,42 @@ def executar_venda(cliente, saldo_sol, preco_atual, motivo="Sinal de venda"):
     )
     print(msg)
     enviar_whatsapp(msg)
-    salvar_posicao(False, None)
     return False
+
+
+def monitorar_stop(cliente):
+    """Checagem rápida a cada 1 minuto: atualiza trailing stop e vende se ativado."""
+    estado = carregar_posicao()
+    if not estado["posicao"]:
+        return
+
+    try:
+        preco_atual = obter_preco_atual(cliente, CODIGO_OPERADO)
+        preco_maximo = estado["preco_maximo"]
+        stop_price = estado["stop_price"]
+        preco_entrada = estado["preco_entrada"]
+
+        novo_maximo, novo_stop = atualizar_trailing_stop(preco_atual, preco_maximo, stop_price, STOP_PCT)
+
+        if novo_maximo != preco_maximo or novo_stop != stop_price:
+            salvar_posicao(True, preco_entrada, preco_maximo=novo_maximo, stop_price=novo_stop)
+            print(f"[stop] Novo topo R${novo_maximo:.2f} → stop atualizado para R${novo_stop:.2f}")
+
+        if verificar_trailing_stop(preco_atual, novo_stop):
+            variacao = ((preco_atual / preco_entrada) - 1) * 100 if preco_entrada else 0
+            print(f"[stop] TRAILING STOP ativado! Preco: R${preco_atual:.2f} | Stop: R${novo_stop:.2f} ({variacao:.2f}%)")
+            enviar_whatsapp(
+                f"TRAILING STOP ATIVADO\n"
+                f"Topo: R${novo_maximo:.2f}\n"
+                f"Stop: R${novo_stop:.2f}\n"
+                f"Atual: R${preco_atual:.2f}\n"
+                f"Variacao desde entrada: {variacao:.2f}%"
+            )
+            _, saldo_sol = obter_saldos(cliente)
+            executar_venda(cliente, saldo_sol, preco_atual, motivo="Trailing Stop")
+
+    except Exception as e:
+        print(f"[stop] Erro no monitoramento: {e}")
 
 
 def ciclo(cliente):
@@ -127,17 +177,20 @@ def ciclo(cliente):
     estado = carregar_posicao()
     posicao = estado["posicao"]
     preco_entrada = estado["preco_entrada"]
+    preco_maximo = estado["preco_maximo"]
+    stop_price = estado["stop_price"]
 
     posicao_real = obter_posicao_real(cliente)
     if posicao_real != posicao:
         print(f"Divergencia detectada. Real: {posicao_real} | Salvo: {posicao}. Usando posicao real.")
         posicao = posicao_real
-        preco_entrada = preco_entrada if posicao_real else None
-        salvar_posicao(posicao, preco_entrada)
+        if not posicao_real:
+            preco_entrada = preco_maximo = stop_price = None
+        salvar_posicao(posicao, preco_entrada, preco_maximo=preco_maximo, stop_price=stop_price)
 
     print(f"Posicao: {'COMPRADO' if posicao else 'NAO COMPRADO'}")
     if preco_entrada:
-        print(f"Preco de entrada: R${preco_entrada:.2f}")
+        print(f"Entrada: R${preco_entrada:.2f} | Topo: R${preco_maximo:.2f} | Stop: R${stop_price:.2f}")
 
     dados = pegando_dados(cliente, CODIGO_OPERADO, PERIODO_CANDLE)
     if dados.empty:
@@ -146,18 +199,6 @@ def ciclo(cliente):
 
     preco_atual = float(dados["fechamento"].iloc[-1])
     print(f"Preco atual: R${preco_atual:.2f}")
-
-    if posicao and verificar_stop_loss(preco_atual, preco_entrada, STOP_LOSS_PCT):
-        variacao = ((preco_atual / preco_entrada) - 1) * 100
-        print(f"STOP LOSS ativado! Entrada: R${preco_entrada:.2f} | Atual: R${preco_atual:.2f} ({variacao:.2f}%)")
-        enviar_whatsapp(
-            f"STOP LOSS ATIVADO\n"
-            f"Entrada: R${preco_entrada:.2f}\n"
-            f"Atual: R${preco_atual:.2f}\n"
-            f"Variacao: {variacao:.2f}%"
-        )
-        executar_venda(cliente, saldo_sol, preco_atual, motivo="Stop Loss")
-        return
 
     sinal = avaliar_sinal(dados, posicao)
 
@@ -181,14 +222,20 @@ def main():
             try:
                 ciclo(cliente)
                 tentativas = 0
-                print(f"Aguardando 1 hora...")
-                time.sleep(60 * 60)
+
+                # Monitoramento a cada 1 minuto durante 1 hora
+                checks = INTERVALO_ESTRATEGIA // INTERVALO_MONITORAMENTO
+                for i in range(checks):
+                    time.sleep(INTERVALO_MONITORAMENTO)
+                    print(f"[{i+1}/{checks}] {pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%H:%M:%S')} checando stop...")
+                    monitorar_stop(cliente)
+
             except KeyboardInterrupt:
                 raise
             except Exception as e:
                 tentativas += 1
                 espera = min(60 * tentativas, 300)
-                print(f"Erro no ciclo ({tentativas}/{MAX_TENTATIVAS}): {e}. Reconectando em {espera}s...")
+                print(f"Erro ({tentativas}/{MAX_TENTATIVAS}): {e}. Reconectando em {espera}s...")
                 if tentativas >= MAX_TENTATIVAS:
                     enviar_whatsapp(f"Bot com erros consecutivos: {e}")
                     tentativas = 0
