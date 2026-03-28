@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+body {
+  background: #030712;
+  color: #f9fafb;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.card {
+  @apply rounded-xl p-4 border;
+}
+.card-comprado {
+  @apply bg-gray-900 border-blue-800;
+}
+.card-livre {
+  @apply bg-gray-900 border-gray-800;
+}
+
+.badge {
+  @apply text-xs font-semibold px-2 py-0.5 rounded-full;
+}
+.badge-ok {
+  @apply bg-green-900 text-green-400;
+}
+.badge-parado {
+  @apply bg-red-900 text-red-400;
+}
+.badge-neutro {
+  @apply bg-gray-800 text-gray-400;
+}
+.badge-erro {
+  @apply bg-red-900 text-red-300;
+}
