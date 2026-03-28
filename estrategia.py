@@ -24,9 +24,17 @@ def verificar_stop_loss(preco_atual: float, preco_entrada: float, limite_pct: fl
     return preco_atual < preco_entrada * (1 - limite_pct)
 
 
+def verificar_lucro_minimo(preco_atual: float, preco_entrada: float, taxa_pct: float = 0.001) -> bool:
+    """Retorna True se o lucro cobre as taxas de compra + venda (round trip = 2 * taxa_pct).
+    Se preco_entrada for None, permite a venda por segurança."""
+    if preco_entrada is None:
+        return True
+    return preco_atual > preco_entrada * (1 + 2 * taxa_pct)
+
+
 def calcular_quantidade(saldo_brl: float, preco_atual: float, percentual: float = 0.90) -> float:
     """Calcula a quantidade de ativo a comprar com base no saldo disponível."""
-    return round((saldo_brl * percentual) / preco_atual, 4)
+    return round((saldo_brl * percentual) / preco_atual, 3)
 
 
 def avaliar_sinal(

@@ -7,7 +7,7 @@ from decimal import Decimal, ROUND_DOWN
 from dotenv import load_dotenv
 
 from persistencia import salvar_posicao, carregar_posicao
-from estrategia import calcular_quantidade, avaliar_sinal, verificar_stop_loss
+from estrategia import calcular_quantidade, avaliar_sinal, verificar_stop_loss, verificar_lucro_minimo
 from notificacao import enviar_whatsapp
 
 load_dotenv()
@@ -99,7 +99,7 @@ def executar_compra(cliente, saldo_brl, preco_atual):
 
 
 def executar_venda(cliente, saldo_sol, preco_atual, motivo="Sinal de venda"):
-    quantidade_formatada = Decimal(str(saldo_sol)).quantize(Decimal("0.0001"), rounding=ROUND_DOWN)
+    quantidade_formatada = Decimal(str(saldo_sol)).quantize(Decimal("0.001"), rounding=ROUND_DOWN)
     cliente.create_order(
         symbol=CODIGO_OPERADO,
         side=SIDE_SELL,
@@ -164,7 +164,11 @@ def ciclo(cliente):
     if sinal == "COMPRAR":
         executar_compra(cliente, saldo_brl, preco_atual)
     elif sinal == "VENDER":
-        executar_venda(cliente, saldo_sol, preco_atual)
+        if verificar_lucro_minimo(preco_atual, preco_entrada):
+            executar_venda(cliente, saldo_sol, preco_atual)
+        else:
+            variacao = ((preco_atual / preco_entrada) - 1) * 100 if preco_entrada else 0
+            print(f"Sinal de venda ignorado: lucro ({variacao:.2f}%) nao cobre as taxas (0.20%). Aguardando.")
     else:
         print("Sem sinal. Aguardando.")
 

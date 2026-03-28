@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import pytest
-from estrategia import calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal
+from estrategia import calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal, verificar_lucro_minimo
 
 
 def _make_dados(n=60, tendencia="alta"):
@@ -58,12 +58,12 @@ def test_stop_loss_no_limite_exato():
 
 def test_calcular_quantidade_dinamica():
     resultado = calcular_quantidade(saldo_brl=100.0, preco_atual=500.0, percentual=0.90)
-    assert resultado == 0.18
+    assert resultado == 0.18  # 90 / 500 = 0.18
 
 
 def test_calcular_quantidade_arredondamento():
     resultado = calcular_quantidade(saldo_brl=100.0, preco_atual=300.0, percentual=0.90)
-    assert resultado == 0.3
+    assert resultado == 0.3  # 90 / 300 = 0.3 → 3 casas
 
 
 def test_calcular_quantidade_nao_excede_saldo():
@@ -103,3 +103,37 @@ def test_sem_sinal_quando_comprado_e_tendencia_alta():
     dados = _make_dados(60, tendencia="alta")
     sinal = avaliar_sinal(dados, posicao=True)
     assert sinal is None
+
+
+# --- Lucro Mínimo (cobertura de taxa) ---
+
+def test_lucro_minimo_atingido():
+    # Comprou a 440, vendendo a 441 → variação de 0,23% > 0,2% de taxa
+    assert verificar_lucro_minimo(preco_atual=441.0, preco_entrada=440.0) is True
+
+
+def test_lucro_minimo_nao_atingido():
+    # Comprou a 440, vendendo a 440.5 → variação de 0,11% < 0,2% de taxa
+    assert verificar_lucro_minimo(preco_atual=440.5, preco_entrada=440.0) is False
+
+
+def test_lucro_minimo_prejuizo():
+    # Vendendo abaixo do preço de entrada → não cobre taxa
+    assert verificar_lucro_minimo(preco_atual=438.0, preco_entrada=440.0) is False
+
+
+def test_lucro_minimo_sem_preco_entrada():
+    # Sem preço de entrada salvo → permite vender (segurança)
+    assert verificar_lucro_minimo(preco_atual=441.0, preco_entrada=None) is True
+
+
+def test_lucro_minimo_exatamente_no_limite():
+    # Exatamente 0,2% acima → não atingido (precisa ser estritamente maior)
+    preco_entrada = 440.0
+    preco_minimo = preco_entrada * 1.002  # = 440.88
+    assert verificar_lucro_minimo(preco_atual=preco_minimo, preco_entrada=preco_entrada) is False
+
+
+def test_lucro_minimo_taxa_customizada():
+    # Taxa customizada de 0,075% (com BNB) → round trip 0,15%
+    assert verificar_lucro_minimo(preco_atual=440.67, preco_entrada=440.0, taxa_pct=0.00075) is True
