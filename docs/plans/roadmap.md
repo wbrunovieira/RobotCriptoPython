@@ -19,6 +19,21 @@
 
 ## Próximas Funcionalidades
 
+### 7. Operação 24h em Servidor com Resiliência
+- [ ] Logs organizados por dia (ex: `logs/2026-03-28.log`)
+- [ ] Histórico diário: saldo inicial, operações do dia, lucro/prejuízo, saldo final
+- [ ] Ao reiniciar, carregar histórico do dia atual e retomar operações sem perder contexto
+- [ ] Persistir saldo inicial do dia em disco para calcular resultado diário corretamente
+- [ ] Script de deploy para servidor Linux (systemd service para reinício automático)
+- [ ] Healthcheck: se o bot ficar mais de 2h sem ciclo, notifica via WhatsApp
+
+### 6. Reserva em USDC
+- [ ] Calcular lucro real após cada venda (preço venda - preço compra - taxas)
+- [ ] Acumular lucros em BRL até atingir R$30 mínimo para conversão
+- [ ] Converter 50% do lucro acumulado de BRL para USDC automaticamente
+- [ ] Registrar reserva acumulada em USDC no log e no relatório fiscal
+- [ ] Alertar via WhatsApp o valor convertido e reserva total em USDC
+
 ### 1. Relatório Fiscal
 - [ ] Calcular lucro/prejuízo por operação (preço de compra vs venda)
 - [ ] Calcular imposto devido (15% a 22,5% sobre ganhos acima de R$35.000/mês)
