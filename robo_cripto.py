@@ -7,6 +7,7 @@ from decimal import Decimal, ROUND_DOWN
 from dotenv import load_dotenv
 
 from persistencia import salvar_posicao, carregar_posicao
+from conexao import criar_cliente_sincronizado
 from estrategia import (
     calcular_quantidade,
     avaliar_sinal,
@@ -32,7 +33,7 @@ INTERVALO_ESTRATEGIA = 60 * 60    # 1 hora entre avaliações completas
 
 
 def criar_cliente():
-    return Client(api_key, secret_key)
+    return criar_cliente_sincronizado(api_key, secret_key)
 
 
 def pegando_dados(cliente, codigo, intervalo):
