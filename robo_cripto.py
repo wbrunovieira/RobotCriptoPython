@@ -19,6 +19,7 @@ from estrategia import (
 )
 from notificacao import enviar_whatsapp
 from stats import iniciar_stats_do_dia, registrar_compra, registrar_venda, calcular_resumo, carregar_stats_do_dia
+from reserva import carregar_estado_reserva, registrar_lucro, calcular_conversao, registrar_conversao
 
 load_dotenv()
 
@@ -149,7 +150,42 @@ def executar_venda(cliente, saldo_sol, preco_atual, motivo="Sinal de venda"):
     )
     print(msg)
     enviar_whatsapp(msg)
+
+    _verificar_reserva_usdc(cliente, lucro_op, timestamp)
     return False
+
+
+def _verificar_reserva_usdc(cliente, lucro_op: float, timestamp: str):
+    """Após venda: acumula lucro e converte 50% para USDC se lucro >= R$30."""
+    try:
+        estado = registrar_lucro(lucro_op)
+        valor_conversao = calcular_conversao(estado["lucro_acumulado_brl"])
+        if valor_conversao == 0.0:
+            print(f"[reserva] Lucro acumulado: R${estado['lucro_acumulado_brl']:.2f} (aguardando R$30 para converter)")
+            return
+
+        ticker = cliente.get_symbol_ticker(symbol="USDCBRL")
+        taxa_cambio = float(ticker["price"])
+        quantidade_usdc = round(valor_conversao / taxa_cambio, 4)
+
+        cliente.create_order(
+            symbol="USDCBRL",
+            side="BUY",
+            type="MARKET",
+            quoteOrderQty=valor_conversao,
+        )
+
+        estado_novo = registrar_conversao(valor_conversao, quantidade_usdc, taxa_cambio, timestamp)
+        msg = (
+            f"RESERVA USDC\n"
+            f"Convertido: R${valor_conversao:.2f} → {quantidade_usdc:.4f} USDC\n"
+            f"Taxa: R${taxa_cambio:.4f}/USDC\n"
+            f"Reserva total: {estado_novo['reserva_usdc']:.4f} USDC"
+        )
+        print(msg)
+        enviar_whatsapp(msg)
+    except Exception as e:
+        print(f"[reserva] Erro na conversão USDC: {e}")
 
 
 def monitorar_stop(cliente):

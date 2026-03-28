@@ -13,7 +13,7 @@
 - [x] Log de operações com preço e timestamp
 - [x] Soft stop (Ctrl+C encerra limpo após ciclo atual)
 - [x] Sincronização automática de timestamp com servidor Binance
-- [x] Testes automatizados TDD (80 testes)
+- [x] Testes automatizados TDD (97 testes)
 - [x] Stats diários em `stats/YYYY-MM-DD.json` (base para dashboard e fiscal)
 
 ---
@@ -29,10 +29,10 @@
 
 ### 2. Reserva em USDC
 
-- [ ] Acumular lucros em BRL até atingir R$30 mínimo para conversão
-- [ ] Converter 50% do lucro acumulado de BRL para USDC automaticamente
-- [ ] Registrar reserva acumulada em USDC no log e no relatório fiscal
-- [ ] Alertar via WhatsApp o valor convertido e reserva total em USDC
+- [x] Acumular lucros em BRL até atingir R$30 mínimo para conversão
+- [x] Converter 50% do lucro acumulado de BRL para USDC automaticamente
+- [x] Registrar reserva acumulada em USDC no log e no relatório fiscal
+- [x] Alertar via WhatsApp o valor convertido e reserva total em USDC
 
 ### 3. Backtesting
 
