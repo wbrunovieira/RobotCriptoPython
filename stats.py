@@ -42,18 +42,22 @@ def registrar_compra(
     total_brl: float,
     timestamp: str,
     arquivo: str = None,
+    par: str = None,
 ) -> dict:
     """Registra uma operação de compra no stats do dia."""
     if arquivo is None:
         arquivo = _caminho_padrao()
     dados = _carregar(arquivo)
-    dados["operacoes"].append({
+    op = {
         "tipo": "COMPRA",
         "preco": preco,
         "quantidade": quantidade,
         "total_brl": total_brl,
         "timestamp": timestamp,
-    })
+    }
+    if par:
+        op["par"] = par
+    dados["operacoes"].append(op)
     _salvar(dados, arquivo)
     return dados
 
@@ -65,6 +69,7 @@ def registrar_venda(
     preco_entrada: float,
     timestamp: str,
     arquivo: str = None,
+    par: str = None,
 ) -> dict:
     """Registra uma operação de venda com cálculo de lucro/prejuízo."""
     if arquivo is None:
@@ -79,7 +84,7 @@ def registrar_venda(
     lucro_brl = round(total_brl - custo_brl, 2)
     lucro_pct = round((lucro_brl / custo_brl) * 100, 2) if custo_brl else 0.0
 
-    dados["operacoes"].append({
+    op = {
         "tipo": "VENDA",
         "preco": preco,
         "quantidade": quantidade,
@@ -87,7 +92,10 @@ def registrar_venda(
         "lucro_brl": lucro_brl,
         "lucro_pct": lucro_pct,
         "timestamp": timestamp,
-    })
+    }
+    if par:
+        op["par"] = par
+    dados["operacoes"].append(op)
     _salvar(dados, arquivo)
     return dados
 

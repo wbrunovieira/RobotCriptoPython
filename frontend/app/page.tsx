@@ -62,7 +62,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {posicoes
               ? Object.entries(posicoes).map(([simbolo, pos]) => (
-                  <PosicaoCard key={simbolo} simbolo={simbolo} posicao={pos} />
+                  <PosicaoCard key={simbolo} simbolo={simbolo} posicao={pos} operacoes={operacoes ?? []} />
                 ))
               : ["SOLBRL", "BTCBRL", "ETHBRL"].map((s) => (
                   <div key={s} className="rounded-xl bg-gray-800 animate-pulse h-28" />

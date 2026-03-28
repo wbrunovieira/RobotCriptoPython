@@ -5,10 +5,14 @@ import os
 import sys
 from datetime import date
 from dotenv import load_dotenv
+from binance import Client as BinanceClient
+
+# Raiz do projeto (um nível acima de api/)
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Permite importar módulos da raiz do projeto (stats, fiscal, etc.)
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"))
+sys.path.insert(0, _ROOT)
+load_dotenv(os.path.join(_ROOT, ".env"))
 from fastapi import FastAPI, Depends, HTTPException, Query
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,19 +45,19 @@ def _verificar_token(credentials: HTTPAuthorizationCredentials = Depends(_securi
 
 
 def _stats_dir() -> str:
-    return os.getenv("STATS_DIR", "stats")
+    return os.getenv("STATS_DIR", os.path.join(_ROOT, "stats"))
 
 
 def _posicao_dir() -> str:
-    return os.getenv("POSICAO_DIR", ".")
+    return os.getenv("POSICAO_DIR", _ROOT)
 
 
 def _reserva_file() -> str:
-    return os.getenv("RESERVA_FILE", "reserva/estado.json")
+    return os.getenv("RESERVA_FILE", os.path.join(_ROOT, "reserva/estado.json"))
 
 
 def _status_file() -> str:
-    return os.getenv("STATUS_FILE", "status.json")
+    return os.getenv("STATUS_FILE", os.path.join(_ROOT, "status.json"))
 
 
 def _arquivo_posicao_par(simbolo: str) -> str:
@@ -158,6 +162,29 @@ def get_reserva():
         return estado_inicial()
     with open(arquivo) as f:
         return json.load(f)
+
+
+# ---------------------------------------------------------------------------
+# GET /candles/{simbolo}
+# ---------------------------------------------------------------------------
+
+@app.get("/candles/{simbolo}", dependencies=[Depends(_verificar_token)])
+def get_candles(simbolo: str, limite: int = Query(default=100)):
+    api_key = os.getenv("KEY_BINANCE", "")
+    api_secret = os.getenv("SECRET_BINANCE", "")
+    cliente = BinanceClient(api_key, api_secret)
+    klines = cliente.get_klines(symbol=simbolo.upper(), interval="15m", limit=limite)
+    candles = [
+        {
+            "time": int(k[0]) // 1000,
+            "open": float(k[1]),
+            "high": float(k[2]),
+            "low": float(k[3]),
+            "close": float(k[4]),
+        }
+        for k in klines
+    ]
+    return candles
 
 
 # ---------------------------------------------------------------------------

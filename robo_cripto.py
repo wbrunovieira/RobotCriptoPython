@@ -29,7 +29,7 @@ secret_key = os.getenv("SECRET_BINANCE")
 
 PERIODO_CANDLE = "15m"
 STOP_PCT = 0.05
-TAKE_PROFIT_PCT = 0.05   # vende ao atingir +5% do preço de entrada
+TAKE_PROFIT_PCT = 0.01   # vende ao atingir +1% do preço de entrada
 TETO_SALDO_PCT = 0.60    # cada par pode usar até 60% do BRL disponível
 PERCENTUAL_COMPRA = 0.90  # dentro do teto, usa 90%
 MAX_TENTATIVAS = 3
@@ -123,7 +123,7 @@ def executar_compra(cliente, par, saldo_brl, preco_atual):
     total_brl = round(quantidade_fmt * preco_atual, 2)
     timestamp = pd.Timestamp.now(tz="America/Sao_Paulo").strftime("%Y-%m-%d %H:%M:%S")
     log_operacao("COMPRA", simbolo, quantidade_fmt, preco_atual)
-    registrar_compra(preco_atual, quantidade_fmt, total_brl, timestamp)
+    registrar_compra(preco_atual, quantidade_fmt, total_brl, timestamp, par=simbolo)
     preco_maximo, stop_price = atualizar_trailing_stop(preco_atual, None, None, STOP_PCT)
     salvar_posicao(True, preco_atual, preco_maximo=preco_maximo, stop_price=stop_price,
                    arquivo=arquivo_posicao(simbolo))
@@ -156,7 +156,7 @@ def executar_venda(cliente, par, saldo_ativo, preco_atual, motivo="Sinal de vend
     estado = carregar_posicao(arquivo=arquivo_posicao(simbolo))
     preco_entrada = estado.get("preco_entrada")
     log_operacao("VENDA", simbolo, float(quantidade_fmt), preco_atual)
-    registrar_venda(preco_atual, float(quantidade_fmt), total_brl, preco_entrada, timestamp)
+    registrar_venda(preco_atual, float(quantidade_fmt), total_brl, preco_entrada, timestamp, par=simbolo)
     salvar_posicao(False, None, arquivo=arquivo_posicao(simbolo))
 
     stats = carregar_stats_do_dia()

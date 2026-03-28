@@ -16,6 +16,7 @@ export default function TabelaOperacoes({ operacoes }: Props) {
         <thead>
           <tr className="text-left text-gray-400 border-b border-gray-700">
             <th className="pb-2 pr-4">Hora</th>
+            <th className="pb-2 pr-4">Par</th>
             <th className="pb-2 pr-4">Tipo</th>
             <th className="pb-2 pr-4 text-right">Preço</th>
             <th className="pb-2 pr-4 text-right">Qtd</th>
@@ -32,6 +33,13 @@ export default function TabelaOperacoes({ operacoes }: Props) {
             return (
               <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50">
                 <td className="py-2 pr-4 text-gray-400 font-mono text-xs">{op.timestamp}</td>
+                <td className="py-2 pr-4">
+                  {op.par ? (
+                    <span className="text-xs font-mono font-semibold text-gray-300">
+                      {op.par.replace("BRL", "")}
+                    </span>
+                  ) : "—"}
+                </td>
                 <td className="py-2 pr-4">
                   <span className={`px-2 py-0.5 rounded text-xs font-bold ${isCompra ? "bg-blue-900 text-blue-300" : "bg-purple-900 text-purple-300"}`}>
                     {op.tipo}

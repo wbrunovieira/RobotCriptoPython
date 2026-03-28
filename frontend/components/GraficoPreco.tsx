@@ -16,9 +16,11 @@ interface Props {
   candles: CandleData[];
   operacoes: Operacao[];
   stopAtual?: number | null;
+  precoEntrada?: number | null;
+  takeProfitPct?: number;
 }
 
-export default function GraficoPreco({ simbolo, candles, operacoes, stopAtual }: Props) {
+export default function GraficoPreco({ simbolo, candles, operacoes, stopAtual, precoEntrada, takeProfitPct = 0.05 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,12 +75,29 @@ export default function GraficoPreco({ simbolo, candles, operacoes, stopAtual }:
         color: "#EF4444",
         lineWidth: 1,
         lineStyle: 2,
-        title: "Stop",
+        title: `Stop R$${stopAtual.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
       });
       stopSeries.setData(
         candles.map((c) => ({
           time: c.time as unknown as import("lightweight-charts").Time,
           value: stopAtual,
+        }))
+      );
+    }
+
+    // Linha de take-profit
+    if (precoEntrada && candles.length > 0) {
+      const takeProfitPrice = precoEntrada * (1 + takeProfitPct);
+      const tpSeries = chart.addSeries(LineSeries, {
+        color: "#10B981",
+        lineWidth: 1,
+        lineStyle: 2,
+        title: `TP +${(takeProfitPct * 100).toFixed(0)}% R$${takeProfitPrice.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
+      });
+      tpSeries.setData(
+        candles.map((c) => ({
+          time: c.time as unknown as import("lightweight-charts").Time,
+          value: takeProfitPrice,
         }))
       );
     }
@@ -92,7 +111,7 @@ export default function GraficoPreco({ simbolo, candles, operacoes, stopAtual }:
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [candles, operacoes, stopAtual]);
+  }, [candles, operacoes, stopAtual, precoEntrada, takeProfitPct]);
 
   return (
     <div className="space-y-1">

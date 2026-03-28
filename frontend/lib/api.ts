@@ -49,6 +49,7 @@ export interface ResumoStats {
 
 export interface Operacao {
   tipo: "COMPRA" | "VENDA";
+  par?: string;
   preco: number;
   quantidade: number;
   total_brl: number;
@@ -89,6 +90,17 @@ export const fetchOperacoes = (data?: string) => {
 };
 
 export const fetchReserva = () => apiFetch<Reserva>("/reserva");
+
+export interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+export const fetchCandles = (simbolo: string, limite = 100) =>
+  apiFetch<Candle[]>(`/candles/${simbolo}?limite=${limite}`);
 
 export const downloadFiscalCsv = async (mes: string) => {
   const res = await fetch(`${API_URL}/fiscal/csv?mes=${mes}`, {
