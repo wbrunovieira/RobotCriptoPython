@@ -1,6 +1,8 @@
 import pandas as pd
 import os
 import time
+import signal
+import threading
 from binance.client import Client
 from binance.enums import *
 from decimal import Decimal, ROUND_DOWN
@@ -215,36 +217,61 @@ def ciclo(cliente):
         print("Sem sinal. Aguardando.")
 
 
+_parar = threading.Event()
+
+
+def _handler_sinal(signum, frame):
+    if not _parar.is_set():
+        print("\nSoft stop solicitado. Aguardando fim do ciclo atual...")
+        _parar.set()
+
+
+def _aguardar(segundos: int) -> bool:
+    """Aguarda em intervalos de 1s verificando o flag de parada.
+    Retorna True se deve parar, False se o tempo esgotou normalmente."""
+    for _ in range(segundos):
+        if _parar.is_set():
+            return True
+        time.sleep(1)
+    return False
+
+
 def main():
+    signal.signal(signal.SIGINT, _handler_sinal)
+    signal.signal(signal.SIGTERM, _handler_sinal)
+
     tentativas = 0
     cliente = criar_cliente()
-    try:
-        while True:
-            try:
-                ciclo(cliente)
+
+    while not _parar.is_set():
+        try:
+            ciclo(cliente)
+            tentativas = 0
+
+            checks = INTERVALO_ESTRATEGIA // INTERVALO_MONITORAMENTO
+            for i in range(checks):
+                if _aguardar(INTERVALO_MONITORAMENTO):
+                    break
+                print(f"[{i+1}/{checks}] {pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%H:%M:%S')} checando stop...")
+                monitorar_stop(cliente)
+
+        except Exception as e:
+            tentativas += 1
+            espera = min(60 * tentativas, 300)
+            print(f"Erro ({tentativas}/{MAX_TENTATIVAS}): {e}. Reconectando em {espera}s...")
+            if tentativas >= MAX_TENTATIVAS:
+                enviar_whatsapp(f"Bot com erros consecutivos: {e}")
                 tentativas = 0
+            if _aguardar(espera):
+                break
+            cliente = criar_cliente()
 
-                # Monitoramento a cada 1 minuto durante 1 hora
-                checks = INTERVALO_ESTRATEGIA // INTERVALO_MONITORAMENTO
-                for i in range(checks):
-                    time.sleep(INTERVALO_MONITORAMENTO)
-                    print(f"[{i+1}/{checks}] {pd.Timestamp.now(tz='America/Sao_Paulo').strftime('%H:%M:%S')} checando stop...")
-                    monitorar_stop(cliente)
-
-            except KeyboardInterrupt:
-                raise
-            except Exception as e:
-                tentativas += 1
-                espera = min(60 * tentativas, 300)
-                print(f"Erro ({tentativas}/{MAX_TENTATIVAS}): {e}. Reconectando em {espera}s...")
-                if tentativas >= MAX_TENTATIVAS:
-                    enviar_whatsapp(f"Bot com erros consecutivos: {e}")
-                    tentativas = 0
-                time.sleep(espera)
-                cliente = criar_cliente()
-    except KeyboardInterrupt:
-        print("Robo encerrado pelo usuario.")
+    print("Encerrando bot...")
+    try:
         enviar_whatsapp("Bot encerrado manualmente.")
+    except Exception:
+        pass
+    print("Robo encerrado.")
 
 
 if __name__ == "__main__":
