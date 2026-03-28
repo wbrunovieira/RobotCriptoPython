@@ -238,3 +238,12 @@ def test_baixar_dados_chama_cliente_com_parametros_corretos():
     cliente.get_historical_klines.return_value = []
     baixar_dados_historicos(cliente, simbolo="BTCBRL", intervalo="4h", data_inicio="1 fev, 2026")
     cliente.get_historical_klines.assert_called_once_with("BTCBRL", "4h", "1 fev, 2026", None)
+
+
+def test_baixar_dados_intervalo_padrao_e_15m():
+    """Intervalo padrão deve ser 15m, alinhado com a estratégia do bot."""
+    cliente = MagicMock()
+    cliente.get_historical_klines.return_value = []
+    baixar_dados_historicos(cliente)
+    args = cliente.get_historical_klines.call_args[0]
+    assert args[1] == "15m"

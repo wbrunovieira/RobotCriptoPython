@@ -26,13 +26,13 @@ load_dotenv()
 api_key = os.getenv("KEY_BINANCE")
 secret_key = os.getenv("SECRET_BINANCE")
 
-PERIODO_CANDLE = "1h"
+PERIODO_CANDLE = "15m"
 STOP_PCT = 0.05
 TETO_SALDO_PCT = 0.60    # cada par pode usar até 60% do BRL disponível
 PERCENTUAL_COMPRA = 0.90  # dentro do teto, usa 90%
 MAX_TENTATIVAS = 3
 INTERVALO_MONITORAMENTO = 60
-INTERVALO_ESTRATEGIA = 60 * 60
+INTERVALO_ESTRATEGIA = 15 * 60  # avalia sinais a cada 15 minutos
 
 
 def criar_cliente():

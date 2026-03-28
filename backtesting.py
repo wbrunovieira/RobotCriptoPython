@@ -207,7 +207,7 @@ def comparar_periodos(
 def baixar_dados_historicos(
     cliente,
     simbolo: str = "SOLBRL",
-    intervalo: str = "1h",
+    intervalo: str = "15m",
     data_inicio: str = "1 jan, 2026",
     data_fim: str | None = None,
 ) -> pd.DataFrame:
