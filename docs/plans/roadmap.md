@@ -13,7 +13,7 @@
 - [x] Log de operações com preço e timestamp
 - [x] Soft stop (Ctrl+C encerra limpo após ciclo atual)
 - [x] Sincronização automática de timestamp com servidor Binance
-- [x] Testes automatizados TDD (97 testes)
+- [x] Testes automatizados TDD (119 testes)
 - [x] Stats diários em `stats/YYYY-MM-DD.json` (base para dashboard e fiscal)
 
 ---
@@ -36,10 +36,10 @@
 
 ### 3. Backtesting
 
-- [ ] Baixar dados históricos da Binance (candles SOLBRL)
-- [ ] Simular a estratégia atual em dados passados
-- [ ] Exibir resultado: lucro/prejuízo acumulado, drawdown máximo, % de acerto
-- [ ] Comparar diferentes períodos de médias para encontrar o mais rentável
+- [x] Baixar dados históricos da Binance (candles SOLBRL)
+- [x] Simular a estratégia atual em dados passados
+- [x] Exibir resultado: lucro/prejuízo acumulado, drawdown máximo, % de acerto
+- [x] Comparar diferentes períodos de médias para encontrar o mais rentável
 
 ### 4. Ajuste Automático de Parâmetros
 > Depende do backtesting (item 3).
