@@ -18,6 +18,7 @@ from estrategia import (
     verificar_trailing_stop,
 )
 from notificacao import enviar_whatsapp
+from stats import iniciar_stats_do_dia, registrar_compra, registrar_venda, calcular_resumo, carregar_stats_do_dia
 
 load_dotenv()
 
@@ -101,7 +102,10 @@ def executar_compra(cliente, saldo_brl, preco_atual):
         type=ORDER_TYPE_MARKET,
         quantity=quantidade,
     )
+    total_brl = round(quantidade * preco_atual, 2)
+    timestamp = pd.Timestamp.now(tz="America/Sao_Paulo").strftime("%Y-%m-%d %H:%M:%S")
     log_operacao("COMPRA", quantidade, preco_atual)
+    registrar_compra(preco_atual, quantidade, total_brl, timestamp)
     preco_maximo, stop_price = atualizar_trailing_stop(preco_atual, None, None, STOP_PCT)
     salvar_posicao(True, preco_atual, preco_maximo=preco_maximo, stop_price=stop_price)
     msg = (
@@ -109,7 +113,7 @@ def executar_compra(cliente, saldo_brl, preco_atual):
         f"Qtd: {quantidade} SOL\n"
         f"Preco: R${preco_atual:.2f}\n"
         f"Stop inicial: R${stop_price:.2f}\n"
-        f"Total: R${quantidade * preco_atual:.2f}"
+        f"Total: R${total_brl:.2f}"
     )
     print(msg)
     enviar_whatsapp(msg)
@@ -124,12 +128,24 @@ def executar_venda(cliente, saldo_sol, preco_atual, motivo="Sinal de venda"):
         type=ORDER_TYPE_MARKET,
         quantity=float(quantidade_formatada),
     )
+    total_brl = round(float(quantidade_formatada) * preco_atual, 2)
+    timestamp = pd.Timestamp.now(tz="America/Sao_Paulo").strftime("%Y-%m-%d %H:%M:%S")
+    estado = carregar_posicao()
+    preco_entrada = estado.get("preco_entrada")
     log_operacao("VENDA", float(quantidade_formatada), preco_atual)
+    registrar_venda(preco_atual, float(quantidade_formatada), total_brl, preco_entrada, timestamp)
     salvar_posicao(False, None)
+
+    stats = carregar_stats_do_dia()
+    resumo = calcular_resumo(stats) if stats else {}
+    lucro_op = total_brl - (preco_entrada * float(quantidade_formatada)) if preco_entrada else 0
+
     msg = (
         f"VENDA SOL ({motivo})\n"
         f"Qtd: {quantidade_formatada} SOL\n"
-        f"Preco: R${preco_atual:.2f}"
+        f"Preco: R${preco_atual:.2f}\n"
+        f"Lucro op: R${lucro_op:.2f}\n"
+        f"Lucro dia: R${resumo.get('lucro_total_brl', 0):.2f} ({resumo.get('taxa_acerto_pct', 0):.0f}% acerto)"
     )
     print(msg)
     enviar_whatsapp(msg)
@@ -176,6 +192,13 @@ def ciclo(cliente):
 
     saldo_brl, saldo_sol = obter_saldos(cliente)
     print(f"Saldo: BRL R${saldo_brl:.2f} | SOL {saldo_sol:.4f}")
+
+    iniciar_stats_do_dia(saldo_inicial_brl=saldo_brl)
+
+    stats = carregar_stats_do_dia()
+    if stats:
+        resumo = calcular_resumo(stats)
+        print(f"Dia: {resumo['total_operacoes']} operacoes | Lucro: R${resumo['lucro_total_brl']:.2f} | Acerto: {resumo['taxa_acerto_pct']:.0f}%")
 
     estado = carregar_posicao()
     posicao = estado["posicao"]
