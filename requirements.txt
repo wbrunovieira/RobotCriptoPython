@@ -1,0 +1,7 @@
+python-binance==1.0.36
+pandas==2.3.2
+python-dotenv==0.21.1
+requests==2.32.5
+pytest==8.3.5
+pytest-mock==3.14.0
+numpy==2.3.3
