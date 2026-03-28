@@ -13,7 +13,7 @@
 - [x] Log de operações com preço e timestamp
 - [x] Soft stop (Ctrl+C encerra limpo após ciclo atual)
 - [x] Sincronização automática de timestamp com servidor Binance
-- [x] Testes automatizados TDD (134 testes)
+- [x] Testes automatizados TDD (154 testes)
 - [x] Stats diários em `stats/YYYY-MM-DD.json` (base para dashboard e fiscal)
 
 ---
@@ -51,10 +51,10 @@
 
 ### 5. Múltiplos Pares
 
-- [ ] Suporte a BTCBRL e ETHBRL em paralelo com SOLBRL
-- [ ] Gerenciar posição e trailing stop independente por par
-- [ ] Distribuir saldo BRL entre os pares ativos
-- [ ] Relatório consolidado de todos os pares
+- [x] Suporte a BTCBRL e ETHBRL em paralelo com SOLBRL
+- [x] Gerenciar posição e trailing stop independente por par (posicao_{SIMBOLO}.json)
+- [x] Cada par usa até 60% do BRL disponível no momento da compra (Opção C)
+- [x] Relatório consolidado de todos os pares
 
 ### 6. Frontend Web
 > Dashboard principal do bot — substitui o terminal. Alimentado pelos stats diários.
