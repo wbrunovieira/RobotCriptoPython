@@ -93,6 +93,21 @@ export const fetchReserva = () => apiFetch<Reserva>("/reserva");
 
 export const fetchCotacao = () => apiFetch<{ usd_brl: number }>("/cotacao");
 
+export interface AtivoSaldo {
+  quantidade: number;
+  valor_brl: number;
+  valor_usd: number;
+  preco_brl?: number;
+}
+
+export interface Saldos {
+  total_brl: number;
+  total_usd: number;
+  ativos: Record<string, AtivoSaldo>;
+}
+
+export const fetchSaldos = () => apiFetch<Saldos>("/saldos");
+
 export interface Candle {
   time: number;
   open: number;

@@ -3,14 +3,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   tokenSalvo, fetchPosicoes, fetchStatsDia, fetchOperacoes, fetchReserva,
-  fetchStatsMes, downloadFiscalCsv,
-  Posicao, ResumoStats, Operacao, Reserva,
+  fetchStatsMes, downloadFiscalCsv, fetchSaldos,
+  Posicao, ResumoStats, Operacao, Reserva, Saldos,
 } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import StatusBadge from "@/components/StatusBadge";
 import PosicaoCard from "@/components/PosicaoCard";
 import StatsResumo from "@/components/StatsResumo";
 import TabelaOperacoes from "@/components/TabelaOperacoes";
+import SaldoTotal from "@/components/SaldoTotal";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -35,6 +36,9 @@ export default function Dashboard() {
   );
   const { data: reserva } = usePolling<Reserva>(
     "reserva", fetchReserva, 30000
+  );
+  const { data: saldos } = usePolling<Saldos>(
+    "saldos", fetchSaldos, 30000
   );
 
   async function handleDownloadCsv() {
@@ -69,6 +73,8 @@ export default function Dashboard() {
                 ))}
           </div>
         </section>
+
+        {saldos && <SaldoTotal saldos={saldos} />}
 
         {reserva && (
           <section className="bg-gray-900 rounded-xl p-4 flex gap-8">

@@ -165,6 +165,55 @@ def get_reserva():
 
 
 # ---------------------------------------------------------------------------
+# GET /saldos
+# ---------------------------------------------------------------------------
+
+@app.get("/saldos", dependencies=[Depends(_verificar_token)])
+def get_saldos():
+    api_key = os.getenv("KEY_BINANCE", "")
+    api_secret = os.getenv("SECRET_BINANCE", "")
+    cliente = BinanceClient(api_key, api_secret)
+
+    cotacao_usd = float(cliente.get_symbol_ticker(symbol="USDTBRL")["price"])
+
+    ativos = ["BRL", "SOL", "BTC", "ETH", "XRP", "BNB", "USDC", "USDT"]
+    conta = cliente.get_account()
+    saldos = {a: 0.0 for a in ativos}
+    for item in conta["balances"]:
+        if item["asset"] in saldos:
+            saldos[item["asset"]] = float(item["free"]) + float(item["locked"])
+
+    resultado = {}
+    total_brl = saldos["BRL"]
+
+    for ativo, quantidade in saldos.items():
+        if quantidade == 0:
+            continue
+        if ativo == "BRL":
+            resultado["BRL"] = {"quantidade": quantidade, "valor_brl": quantidade, "valor_usd": round(quantidade / cotacao_usd, 2)}
+            continue
+        if ativo in ("USDC", "USDT"):
+            valor_brl = round(quantidade * cotacao_usd, 2)
+            total_brl += valor_brl
+            resultado[ativo] = {"quantidade": quantidade, "valor_brl": valor_brl, "valor_usd": round(quantidade, 2)}
+            continue
+        try:
+            preco_brl = float(cliente.get_symbol_ticker(symbol=f"{ativo}BRL")["price"])
+            valor_brl = round(quantidade * preco_brl, 2)
+            total_brl += valor_brl
+            resultado[ativo] = {
+                "quantidade": quantidade,
+                "preco_brl": preco_brl,
+                "valor_brl": valor_brl,
+                "valor_usd": round(valor_brl / cotacao_usd, 2),
+            }
+        except Exception:
+            pass
+
+    return {"total_brl": round(total_brl, 2), "total_usd": round(total_brl / cotacao_usd, 2), "ativos": resultado}
+
+
+# ---------------------------------------------------------------------------
 # GET /cotacao
 # ---------------------------------------------------------------------------
 
