@@ -424,6 +424,7 @@ def main():
             cliente = criar_cliente()
 
     print("Encerrando bot...")
+    _gravar_status(rodando=False)
     try:
         enviar_whatsapp("Bot encerrado manualmente.")
     except Exception:

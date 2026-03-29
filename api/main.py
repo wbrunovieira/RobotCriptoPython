@@ -324,15 +324,17 @@ def _bot_rodando() -> bool:
         if os.path.exists(arquivo):
             with open(arquivo) as f:
                 dados = json.load(f)
+            # se bot gravou rodando=false ao sair, confia nesse valor
+            if dados.get("rodando") is False:
+                return False
             if dados.get("rodando") is True:
-                # confirma que o processo ainda existe
                 pid_status = dados.get("pid")
                 if pid_status:
                     try:
                         os.kill(int(pid_status), 0)
                         return True
                     except (ProcessLookupError, PermissionError, TypeError):
-                        pass
+                        return False
                 else:
                     return True
     except Exception:
