@@ -66,3 +66,4 @@ status.json
 stats/
 reserva/
 log_operacoes.txt
+bot.pid
