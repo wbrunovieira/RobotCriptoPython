@@ -6,7 +6,7 @@ import {
 } from "@/lib/api";
 
 const DEFAULTS: BotParams = {
-  bot_id: "CRv1",
+  bot_id: "MACross1",
   take_profit_pct: 0.01,
   stop_pct: 0.05,
   teto_saldo_pct: 0.60,

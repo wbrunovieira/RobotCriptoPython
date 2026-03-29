@@ -27,7 +27,7 @@ load_dotenv()
 api_key = os.getenv("KEY_BINANCE")
 secret_key = os.getenv("SECRET_BINANCE")
 
-BOT_ID = os.getenv("BOT_ID", "CRv1")  # identifica este bot nas ordens da Binance
+BOT_ID = os.getenv("BOT_ID", "MACross1")  # identifica este bot nas ordens da Binance
 
 PERIODO_CANDLE = os.getenv("BOT_PERIODO_CANDLE", "15m")
 STOP_PCT = float(os.getenv("BOT_STOP_PCT", "0.05"))

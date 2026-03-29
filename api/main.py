@@ -342,7 +342,7 @@ def _bot_rodando() -> bool:
 
 
 class BotParams(BaseModel):
-    bot_id: str = "CRv1"
+    bot_id: str = "MACross1"
     take_profit_pct: float = 0.01
     stop_pct: float = 0.05
     teto_saldo_pct: float = 0.60
