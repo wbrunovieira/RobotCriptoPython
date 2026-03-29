@@ -17,6 +17,7 @@ from estrategia import (
     verificar_trailing_stop,
     verificar_take_profit,
     contar_posicoes_abertas,
+    calcular_rsi,
 )
 from notificacao import enviar_whatsapp
 from stats import iniciar_stats_do_dia, registrar_compra, registrar_venda, calcular_resumo, carregar_stats_do_dia
@@ -36,6 +37,8 @@ TAKE_PROFIT_PCT = float(os.getenv("BOT_TAKE_PROFIT_PCT", "0.03"))
 TETO_SALDO_PCT = float(os.getenv("BOT_TETO_SALDO_PCT", "0.60"))
 MAX_POSICOES = int(os.getenv("BOT_MAX_POSICOES", "2"))
 PERCENTUAL_COMPRA = 0.90  # dentro do teto, usa 90%
+STOP_PORTFOLIO_PCT = float(os.getenv("BOT_STOP_PORTFOLIO_PCT", "0.05"))  # drawdown máximo do portfolio
+_BLOQUEIO_PORTFOLIO_FILE = "bloqueio_portfolio.json"
 MAX_TENTATIVAS = 3
 INTERVALO_MONITORAMENTO = int(os.getenv("BOT_INTERVALO_MONITORAMENTO", "60"))
 _intervalo_estrategia_min = int(os.getenv("BOT_INTERVALO_ESTRATEGIA_MIN", "15"))
@@ -120,6 +123,109 @@ def log_operacao(tipo, simbolo, quantidade, preco):
             f.write(f"[{timestamp}] {tipo} {simbolo} | Qtd: {quantidade} | Preco: R${preco:.2f}\n")
     except Exception as e:
         print(f"Erro ao gravar log: {e}")
+
+
+def _portfolio_bloqueado() -> bool:
+    """Retorna True se o stop de portfolio foi acionado nas últimas 24h."""
+    import json as _json
+    if not os.path.exists(_BLOQUEIO_PORTFOLIO_FILE):
+        return False
+    try:
+        with open(_BLOQUEIO_PORTFOLIO_FILE) as f:
+            dados = _json.load(f)
+        bloqueio_ate = pd.Timestamp(dados["bloqueio_ate"])
+        agora = pd.Timestamp.now(tz="America/Sao_Paulo")
+        if bloqueio_ate.tzinfo is None:
+            bloqueio_ate = bloqueio_ate.tz_localize("America/Sao_Paulo")
+        if agora < bloqueio_ate:
+            print(f"[portfolio] Bloqueado até {bloqueio_ate.strftime('%Y-%m-%d %H:%M')}.")
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def _bloquear_portfolio(horas: int = 24):
+    import json as _json
+    bloqueio_ate = (pd.Timestamp.now(tz="America/Sao_Paulo") + pd.Timedelta(hours=horas)).isoformat()
+    with open(_BLOQUEIO_PORTFOLIO_FILE, "w") as f:
+        _json.dump({"bloqueio_ate": bloqueio_ate}, f)
+
+
+def _verificar_alta_forte(cliente, simbolo: str, preco_atual: float) -> bool:
+    """Retorna True se MA9 > MA21, preço acima da MA50 e RSI > 55 (mercado em alta forte)."""
+    try:
+        dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
+        if dados.empty or len(dados) < 50:
+            return False
+        fech = dados["fechamento"].astype(float)
+        ma9 = fech.rolling(9).mean().iloc[-1]
+        ma21 = fech.rolling(21).mean().iloc[-1]
+        ma50 = fech.rolling(50).mean().iloc[-1]
+        rsi = calcular_rsi(fech)
+        return bool(ma9 > ma21 and preco_atual > ma50 and rsi > 55)
+    except Exception:
+        return False
+
+
+def verificar_stop_portfolio(cliente) -> bool:
+    """
+    Calcula o drawdown não-realizado do portfolio.
+    Se exceder STOP_PORTFOLIO_PCT, fecha todas as posições e bloqueia por 24h.
+    Retorna True se acionado.
+    """
+    pares = listar_pares()
+    saldo_brl, saldos = obter_saldos(cliente)
+    pnl_total = 0.0
+    capital_total = saldo_brl
+
+    for par in pares:
+        simbolo = par["simbolo"]
+        ativo = par["ativo"]
+        estado = carregar_posicao(arquivo=arquivo_posicao(simbolo))
+        if not estado["posicao"] or not estado.get("preco_entrada"):
+            continue
+        saldo_ativo = saldos.get(ativo, 0.0)
+        if saldo_ativo <= 0:
+            continue
+        try:
+            preco_atual = obter_preco_atual(cliente, simbolo)
+        except Exception:
+            continue
+        preco_entrada = estado["preco_entrada"]
+        capital_total += saldo_ativo * preco_atual
+        pnl_total += saldo_ativo * (preco_atual - preco_entrada)
+
+    if capital_total <= 0:
+        return False
+
+    drawdown_pct = pnl_total / capital_total
+    print(f"[portfolio] P&L não-realizado: R${pnl_total:.2f} ({drawdown_pct*100:.2f}% do capital)")
+
+    if drawdown_pct < -STOP_PORTFOLIO_PCT:
+        msg = (
+            f"STOP DE PORTFOLIO\n"
+            f"Drawdown: {drawdown_pct*100:.1f}% (limite: -{STOP_PORTFOLIO_PCT*100:.0f}%)\n"
+            f"Fechando todas as posições. Bloqueio por 24h."
+        )
+        print(msg)
+        enviar_whatsapp(msg)
+        for par in pares:
+            simbolo = par["simbolo"]
+            ativo = par["ativo"]
+            estado = carregar_posicao(arquivo=arquivo_posicao(simbolo))
+            if estado["posicao"]:
+                try:
+                    preco_atual = obter_preco_atual(cliente, simbolo)
+                    saldo_ativo = saldos.get(ativo, 0.0)
+                    if saldo_ativo > 0:
+                        executar_venda(cliente, par, saldo_ativo, preco_atual, motivo="Stop de Portfolio")
+                except Exception as e:
+                    print(f"[{simbolo}][portfolio] Erro ao fechar: {e}")
+        _bloquear_portfolio(horas=24)
+        return True
+
+    return False
 
 
 def executar_compra(cliente, par, saldo_brl, preco_atual):
@@ -243,9 +349,15 @@ def monitorar_stop_par(cliente, par):
         stop_price = estado["stop_price"]
         preco_entrada = estado["preco_entrada"]
 
-        # --- Take-profit: vende ao atingir +TAKE_PROFIT_PCT e reavalia reentrada ---
+        # --- Take-profit: vende ao atingir +TAKE_PROFIT_PCT ---
         if verificar_take_profit(preco_atual, preco_entrada, TAKE_PROFIT_PCT):
             variacao = ((preco_atual / preco_entrada) - 1) * 100
+
+            # TP adaptativo: em alta forte (MA9>MA21, preço>MA50, RSI>55), mantém posição
+            if _verificar_alta_forte(cliente, simbolo, preco_atual):
+                print(f"[{simbolo}][tp] TP +{variacao:.2f}% atingido | alta forte — trailing stop continua.")
+                return
+
             print(f"[{simbolo}][tp] TAKE-PROFIT! Preco: R${preco_atual:.2f} (+{variacao:.2f}%)")
             enviar_whatsapp(
                 f"TAKE-PROFIT {simbolo}\n"
@@ -294,11 +406,22 @@ def monitorar_stop_par(cliente, par):
             _, saldos = obter_saldos(cliente)
             executar_venda(cliente, par, saldos.get(par["ativo"], 0.0), preco_atual, motivo="Trailing Stop")
 
+            # Reavalia reentrada imediata: se ainda há sinal de compra, recompra
+            saldo_brl, _ = obter_saldos(cliente)
+            dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
+            if not dados.empty:
+                sinal = avaliar_sinal(dados, posicao=False)
+                if sinal == "COMPRAR":
+                    print(f"[{simbolo}][stop] Reentrada imediata após trailing stop.")
+                    executar_compra(cliente, par, saldo_brl, preco_atual)
+
     except Exception as e:
         print(f"[{simbolo}][stop] Erro: {e}")
 
 
 def monitorar_stop(cliente):
+    if verificar_stop_portfolio(cliente):
+        return  # stop de portfolio acionado — não processa stops individuais
     for par in listar_pares():
         monitorar_stop_par(cliente, par)
 
@@ -341,7 +464,10 @@ def ciclo_par(cliente, par, saldo_brl, saldo_ativo):
     sinal = avaliar_sinal(dados, posicao, pares_abertos=pares_abertos, max_posicoes=MAX_POSICOES)
 
     if sinal == "COMPRAR":
-        executar_compra(cliente, par, saldo_brl, preco_atual)
+        if _portfolio_bloqueado():
+            print(f"[{simbolo}] Compra bloqueada: stop de portfolio ativo.")
+        else:
+            executar_compra(cliente, par, saldo_brl, preco_atual)
     elif sinal == "VENDER":
         if verificar_lucro_minimo(preco_atual, preco_entrada):
             executar_venda(cliente, par, saldo_ativo, preco_atual)

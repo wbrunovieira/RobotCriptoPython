@@ -159,6 +159,14 @@ def avaliar_sinal(
         print("Filtro: horário fora da janela operacional (fim de semana). Entrada bloqueada.")
         return None
 
+    # Filtro de regime: não entra se preço abaixo da MA50 (tendência baixista)
+    if len(fechamento) >= 50:
+        ma50 = fechamento.rolling(window=50).mean().iloc[-1]
+        preco_atual_val = float(fechamento.iloc[-1])
+        if preco_atual_val < ma50:
+            print(f"Filtro de regime: preço ({preco_atual_val:.2f}) abaixo da MA50 ({ma50:.2f}). Entrada bloqueada.")
+            return None
+
     # Sinal 1: cruzamento MA9 > MA21 com RSI confirmando momentum (> 50)
     if media_rapida > media_devagar and 50 < rsi < rsi_sobrecomprado:
         if not _volume_acima_media(dados):
