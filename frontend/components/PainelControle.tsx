@@ -7,12 +7,13 @@ import {
 
 const DEFAULTS: BotParams = {
   bot_id: "MACross1",
-  take_profit_pct: 0.01,
-  stop_pct: 0.05,
+  take_profit_pct: 0.03,
+  stop_pct: 0.015,
   teto_saldo_pct: 0.60,
-  periodo_candle: "15m",
+  periodo_candle: "1h",
   intervalo_monitoramento: 60,
-  intervalo_estrategia_min: 15,
+  intervalo_estrategia_min: 60,
+  max_posicoes: 2,
 };
 
 type SseStatus = "desconectado" | "conectando" | "conectado" | "erro";
@@ -245,6 +246,16 @@ export default function PainelControle() {
                   type="number" step="1" min="1"
                   value={params.intervalo_estrategia_min}
                   onChange={(e) => set("intervalo_estrategia_min", parseInt(e.target.value))}
+                  disabled={rodando}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-white disabled:opacity-50"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-gray-400">Máx. posições</span>
+                <input
+                  type="number" step="1" min="1" max="5"
+                  value={params.max_posicoes}
+                  onChange={(e) => set("max_posicoes", parseInt(e.target.value))}
                   disabled={rodando}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-white disabled:opacity-50"
                 />

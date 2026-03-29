@@ -141,6 +141,7 @@ export interface BotParams {
   periodo_candle: string;
   intervalo_monitoramento: number;
   intervalo_estrategia_min: number;
+  max_posicoes: number;
 }
 
 export interface BotInfo {

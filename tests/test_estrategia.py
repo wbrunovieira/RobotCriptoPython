@@ -76,14 +76,15 @@ def test_calcular_quantidade_nao_excede_saldo():
 # --- Avaliação de Sinal ---
 
 def test_sinal_compra_tendencia_alta():
-    # Simula alta moderada: alternando +2.0 / -1.5 → RSI ≈ 57, MA7 > MA40
+    # Simula alta moderada: alternando +2.0 / -1.5 → RSI ≈ 57, MA9 > MA21
     precos = []
     base = 400.0
     for i in range(60):
         base += 2.0 if i % 2 == 0 else -1.5
         precos.append(base)
     dados = pd.DataFrame({"fechamento": precos})
-    sinal = avaliar_sinal(dados, posicao=False)
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
     assert sinal == "COMPRAR"
 
 
@@ -242,10 +243,11 @@ def test_detectar_reversao_rsi_dados_insuficientes():
 
 
 def test_avaliar_sinal_compra_por_reversao_rsi():
-    # MA7 ainda abaixo da MA40 (queda), mas RSI sinalizando reversão → COMPRAR
+    # MA9 ainda abaixo da MA21 (queda), mas RSI sinalizando reversão → COMPRAR
     precos = _make_precos_queda_e_reversao()
     dados = pd.DataFrame({"fechamento": precos})
-    sinal = avaliar_sinal(dados, posicao=False)
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
     assert sinal == "COMPRAR"
 
 

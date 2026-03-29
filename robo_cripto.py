@@ -16,6 +16,7 @@ from estrategia import (
     atualizar_trailing_stop,
     verificar_trailing_stop,
     verificar_take_profit,
+    contar_posicoes_abertas,
 )
 from notificacao import enviar_whatsapp
 from stats import iniciar_stats_do_dia, registrar_compra, registrar_venda, calcular_resumo, carregar_stats_do_dia
@@ -29,10 +30,11 @@ secret_key = os.getenv("SECRET_BINANCE")
 
 BOT_ID = os.getenv("BOT_ID", "MACross1")  # identifica este bot nas ordens da Binance
 
-PERIODO_CANDLE = os.getenv("BOT_PERIODO_CANDLE", "15m")
-STOP_PCT = float(os.getenv("BOT_STOP_PCT", "0.05"))
-TAKE_PROFIT_PCT = float(os.getenv("BOT_TAKE_PROFIT_PCT", "0.01"))
+PERIODO_CANDLE = os.getenv("BOT_PERIODO_CANDLE", "1h")
+STOP_PCT = float(os.getenv("BOT_STOP_PCT", "0.015"))
+TAKE_PROFIT_PCT = float(os.getenv("BOT_TAKE_PROFIT_PCT", "0.03"))
 TETO_SALDO_PCT = float(os.getenv("BOT_TETO_SALDO_PCT", "0.60"))
+MAX_POSICOES = int(os.getenv("BOT_MAX_POSICOES", "2"))
 PERCENTUAL_COMPRA = 0.90  # dentro do teto, usa 90%
 MAX_TENTATIVAS = 3
 INTERVALO_MONITORAMENTO = int(os.getenv("BOT_INTERVALO_MONITORAMENTO", "60"))
@@ -50,6 +52,7 @@ def _params_atuais() -> dict:
         "periodo_candle": PERIODO_CANDLE,
         "intervalo_monitoramento_s": INTERVALO_MONITORAMENTO,
         "intervalo_estrategia_min": _intervalo_estrategia_min,
+        "max_posicoes": MAX_POSICOES,
     }
 
 
@@ -324,7 +327,8 @@ def ciclo_par(cliente, par, saldo_brl, saldo_ativo):
     preco_atual = float(dados["fechamento"].iloc[-1])
     print(f"[{simbolo}] Preco: R${preco_atual:.2f}")
 
-    sinal = avaliar_sinal(dados, posicao)
+    pares_abertos = contar_posicoes_abertas(listar_pares())
+    sinal = avaliar_sinal(dados, posicao, pares_abertos=pares_abertos, max_posicoes=MAX_POSICOES)
 
     if sinal == "COMPRAR":
         executar_compra(cliente, par, saldo_brl, preco_atual)

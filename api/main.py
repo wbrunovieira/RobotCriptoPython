@@ -343,12 +343,13 @@ def _bot_rodando() -> bool:
 
 class BotParams(BaseModel):
     bot_id: str = "MACross1"
-    take_profit_pct: float = 0.01
-    stop_pct: float = 0.05
+    take_profit_pct: float = 0.03
+    stop_pct: float = 0.015
     teto_saldo_pct: float = 0.60
-    periodo_candle: str = "15m"
+    periodo_candle: str = "1h"
     intervalo_monitoramento: int = 60
-    intervalo_estrategia_min: int = 15
+    intervalo_estrategia_min: int = 60
+    max_posicoes: int = 2
 
 
 @app.post("/bot/iniciar", dependencies=[Depends(_verificar_token)])
@@ -364,6 +365,7 @@ def bot_iniciar(params: BotParams):
     env["BOT_PERIODO_CANDLE"] = params.periodo_candle
     env["BOT_INTERVALO_MONITORAMENTO"] = str(params.intervalo_monitoramento)
     env["BOT_INTERVALO_ESTRATEGIA_MIN"] = str(params.intervalo_estrategia_min)
+    env["BOT_MAX_POSICOES"] = str(params.max_posicoes)
 
     log_file = open(_BOT_LOG_FILE, "a")
     proc = subprocess.Popen(
