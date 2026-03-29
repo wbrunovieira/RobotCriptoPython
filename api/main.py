@@ -504,24 +504,26 @@ async def bot_logs_stream(token: str = Query(...), historico: int = Query(defaul
         raise HTTPException(status_code=401, detail="Token inválido")
 
     async def generator():
-        # envia histórico inicial
-        if os.path.exists(_BOT_LOG_FILE):
-            with open(_BOT_LOG_FILE) as f:
-                linhas = f.readlines()
-            for linha in linhas[-historico:]:
-                texto = linha.rstrip("\n").replace("\n", " ")
-                yield f"data: {texto}\n\n"
-
-        # tail em tempo real
+        # garante que o arquivo existe
         with open(_BOT_LOG_FILE, "a+") as _:
-            pass  # garante que o arquivo existe
+            pass
+
         with open(_BOT_LOG_FILE) as f:
-            f.seek(0, 2)  # vai para o fim
+            # envia histórico: lê as últimas N linhas e volta para essa posição
+            todas = f.readlines()
+            for linha in todas[-historico:]:
+                texto = linha.rstrip("\n")
+                if texto:
+                    yield f"data: {texto}\n\n"
+
+            # continua tail a partir do fim atual do arquivo
+            f.seek(0, 2)
             while True:
                 linha = f.readline()
                 if linha:
-                    texto = linha.rstrip("\n").replace("\n", " ")
-                    yield f"data: {texto}\n\n"
+                    texto = linha.rstrip("\n")
+                    if texto:
+                        yield f"data: {texto}\n\n"
                 else:
                     yield ": keepalive\n\n"
                     await asyncio.sleep(1)
