@@ -133,6 +133,22 @@ export const downloadFiscalCsv = async (mes: string) => {
   URL.revokeObjectURL(url);
 };
 
+export interface PerfPonto { data: string; pct: number }
+
+export interface Performance {
+  periodo: string;
+  saldo_inicial: number;
+  series: {
+    bot: PerfPonto[];
+    cdi_115: PerfPonto[];
+    ibovespa: PerfPonto[];
+    btc: PerfPonto[];
+  };
+}
+
+export const fetchPerformance = (periodo = "mes") =>
+  apiFetch<Performance>(`/performance?periodo=${periodo}`);
+
 export interface BotParams {
   bot_id: string;
   take_profit_pct: number;

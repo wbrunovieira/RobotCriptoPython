@@ -426,6 +426,75 @@ def bot_logs(linhas: int = Query(default=100)):
     return {"linhas": [l.rstrip("\n") for l in todas[-linhas:]]}
 
 
+@app.get("/performance", dependencies=[Depends(_verificar_token)])
+def get_performance(periodo: str = Query(default="mes")):
+    import yfinance as yf
+    from datetime import timedelta
+
+    hoje = date.today()
+    dias = {"dia": 1, "semana": 7, "mes": 30}.get(periodo, 30)
+    inicio = hoje - timedelta(days=dias)
+
+    # --- Bot: lucro acumulado por dia ---
+    bot_series = []
+    lucro_acumulado = 0.0
+    saldo_inicial = None
+
+    for i in range(dias + 1):
+        d = inicio + timedelta(days=i)
+        data_str = d.strftime("%Y-%m-%d")
+        arquivo = os.path.join(_stats_dir(), f"{data_str}.json")
+        if os.path.exists(arquivo):
+            with open(arquivo) as f:
+                stats = json.load(f)
+            if saldo_inicial is None:
+                saldo_inicial = stats.get("saldo_inicial_brl") or 1000.0
+            resumo = calcular_resumo(stats)
+            lucro_acumulado += resumo["lucro_total_brl"]
+        pct = round((lucro_acumulado / saldo_inicial) * 100, 4) if saldo_inicial else 0.0
+        bot_series.append({"data": data_str, "pct": pct})
+
+    if saldo_inicial is None:
+        saldo_inicial = 1000.0
+
+    # --- CDI 115% sintético (~13.75% a.a.) ---
+    cdi_anual = 0.1375
+    cdi_115_diario = (1 + cdi_anual * 1.15) ** (1 / 252) - 1
+    cdi_series, acum = [], 1.0
+    for i, p in enumerate(bot_series):
+        cdi_series.append({"data": p["data"], "pct": round((acum - 1) * 100, 4)})
+        acum *= (1 + cdi_115_diario)
+
+    # --- Benchmarks via yfinance ---
+    start_str = inicio.strftime("%Y-%m-%d")
+    end_str = (hoje + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    def yf_returns(ticker: str) -> list:
+        try:
+            df = yf.download(ticker, start=start_str, end=end_str, progress=False, auto_adjust=True)
+            if df.empty:
+                return []
+            closes = df["Close"].squeeze().dropna()
+            base = float(closes.iloc[0])
+            return [
+                {"data": str(ts.date()), "pct": round((float(v) / base - 1) * 100, 4)}
+                for ts, v in closes.items()
+            ]
+        except Exception:
+            return []
+
+    return {
+        "periodo": periodo,
+        "saldo_inicial": saldo_inicial,
+        "series": {
+            "bot": bot_series,
+            "cdi_115": cdi_series,
+            "ibovespa": yf_returns("^BVSP"),
+            "btc": yf_returns("BTC-USD"),
+        },
+    }
+
+
 @app.get("/bot/logs/stream")
 async def bot_logs_stream(token: str = Query(...), historico: int = Query(default=100)):
     """SSE endpoint — token via query param (EventSource não suporta headers)."""

@@ -13,6 +13,7 @@ import StatsResumo from "@/components/StatsResumo";
 import TabelaOperacoes from "@/components/TabelaOperacoes";
 import SaldoTotal from "@/components/SaldoTotal";
 import PainelControle from "@/components/PainelControle";
+import GraficoPerformance from "@/components/GraficoPerformance";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -94,6 +95,8 @@ export default function Dashboard() {
             </div>
           </section>
         )}
+
+        <GraficoPerformance />
 
         {statsDia && <StatsResumo stats={statsDia} titulo={`Hoje — ${statsDia.data ?? ""}`} />}
 
