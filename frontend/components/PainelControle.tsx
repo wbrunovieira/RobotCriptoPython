@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   BotInfo, BotParams,
-  fetchBotInfo, fetchBotLogs, iniciarBot, pararBot,
+  fetchBotInfo, iniciarBot, pararBot, botLogsStreamUrl,
 } from "@/lib/api";
 
 const DEFAULTS: BotParams = {
@@ -14,48 +14,72 @@ const DEFAULTS: BotParams = {
   intervalo_estrategia_min: 15,
 };
 
+type SseStatus = "desconectado" | "conectando" | "conectado" | "erro";
+
 export default function PainelControle() {
   const [aberto, setAberto] = useState(false);
   const [params, setParams] = useState<BotParams>(DEFAULTS);
   const [info, setInfo] = useState<BotInfo | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [sseStatus, setSseStatus] = useState<SseStatus>("desconectado");
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const esRef = useRef<EventSource | null>(null);
 
-  // busca status ao montar (para o botão no canto mostrar estado correto)
+  // busca status ao montar para o botão no canto mostrar estado correto
   useEffect(() => {
     fetchBotInfo().then(setInfo).catch(() => {});
   }, []);
 
-  // polling completo enquanto o painel está aberto
+  // polling leve de status enquanto painel está aberto
   useEffect(() => {
     if (!aberto) return;
-    let cancelado = false;
+    const timer = setInterval(() => {
+      fetchBotInfo().then(setInfo).catch(() => {});
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [aberto]);
 
-    async function poll() {
-      try {
-        const [infoRes, logsRes] = await Promise.all([
-          fetchBotInfo(),
-          fetchBotLogs(200),
-        ]);
-        if (!cancelado) {
-          setInfo(infoRes);
-          setLogs(logsRes.linhas);
-        }
-      } catch {
-        // silencia erros de polling
-      }
+  // SSE — abre quando painel abre, fecha quando fecha
+  useEffect(() => {
+    if (!aberto) {
+      esRef.current?.close();
+      esRef.current = null;
+      setSseStatus("desconectado");
+      return;
     }
 
-    poll();
-    const timer = setInterval(poll, 10000);
+    setSseStatus("conectando");
+    setLogs([]);
+
+    const url = botLogsStreamUrl(200);
+    const es = new EventSource(url);
+    esRef.current = es;
+
+    es.onopen = () => setSseStatus("conectado");
+
+    es.onmessage = (e) => {
+      if (e.data === "") return; // keepalive vazio
+      setLogs((prev) => {
+        const next = [...prev, e.data];
+        return next.length > 500 ? next.slice(-500) : next;
+      });
+    };
+
+    es.onerror = () => {
+      setSseStatus("erro");
+      es.close();
+      esRef.current = null;
+    };
+
     return () => {
-      cancelado = true;
-      clearInterval(timer);
+      es.close();
+      esRef.current = null;
     };
   }, [aberto]);
 
+  // auto-scroll para o fim
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
@@ -94,9 +118,16 @@ export default function PainelControle() {
 
   const rodando = info?.rodando ?? false;
 
+  const sseDot: Record<SseStatus, string> = {
+    desconectado: "bg-gray-600",
+    conectando:   "bg-yellow-400 animate-pulse",
+    conectado:    "bg-blue-400",
+    erro:         "bg-red-500",
+  };
+
   return (
     <>
-      {/* Botão fixo para abrir o painel */}
+      {/* Botão fixo canto superior direito */}
       <button
         onClick={() => setAberto(true)}
         className="fixed top-4 right-4 z-40 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white text-sm px-3 py-2 rounded-lg shadow-lg transition-colors flex items-center gap-2"
@@ -120,14 +151,10 @@ export default function PainelControle() {
           aberto ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        {/* Header do painel */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 shrink-0">
           <div className="flex items-center gap-3">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                rodando ? "bg-green-400 animate-pulse" : "bg-gray-500"
-              }`}
-            />
+            <span className={`w-2.5 h-2.5 rounded-full ${rodando ? "bg-green-400 animate-pulse" : "bg-gray-500"}`} />
             <h2 className="font-semibold text-white">Controle do Bot</h2>
             {info?.pid && (
               <span className="text-xs text-gray-500 font-mono">PID {info.pid}</span>
@@ -144,51 +171,38 @@ export default function PainelControle() {
         <div className="flex-1 overflow-y-auto p-5 space-y-6">
           {/* Parâmetros */}
           <section className="space-y-3">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-              Parâmetros
-            </h3>
-
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Parâmetros</h3>
             <div className="grid grid-cols-2 gap-3">
               <label className="space-y-1">
                 <span className="text-xs text-gray-400">Take Profit (%)</span>
                 <input
-                  type="number"
-                  step="0.001"
-                  min="0"
+                  type="number" step="0.001" min="0"
                   value={params.take_profit_pct * 100}
                   onChange={(e) => set("take_profit_pct", parseFloat(e.target.value) / 100)}
                   disabled={rodando}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-white disabled:opacity-50"
                 />
               </label>
-
               <label className="space-y-1">
                 <span className="text-xs text-gray-400">Stop Trailing (%)</span>
                 <input
-                  type="number"
-                  step="0.001"
-                  min="0"
+                  type="number" step="0.001" min="0"
                   value={params.stop_pct * 100}
                   onChange={(e) => set("stop_pct", parseFloat(e.target.value) / 100)}
                   disabled={rodando}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-white disabled:opacity-50"
                 />
               </label>
-
               <label className="space-y-1">
                 <span className="text-xs text-gray-400">Teto por par (%)</span>
                 <input
-                  type="number"
-                  step="1"
-                  min="1"
-                  max="100"
+                  type="number" step="1" min="1" max="100"
                   value={params.teto_saldo_pct * 100}
                   onChange={(e) => set("teto_saldo_pct", parseFloat(e.target.value) / 100)}
                   disabled={rodando}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-white disabled:opacity-50"
                 />
               </label>
-
               <label className="space-y-1">
                 <span className="text-xs text-gray-400">Período candle</span>
                 <select
@@ -202,26 +216,20 @@ export default function PainelControle() {
                   ))}
                 </select>
               </label>
-
               <label className="space-y-1">
                 <span className="text-xs text-gray-400">Monitoramento (s)</span>
                 <input
-                  type="number"
-                  step="10"
-                  min="10"
+                  type="number" step="10" min="10"
                   value={params.intervalo_monitoramento}
                   onChange={(e) => set("intervalo_monitoramento", parseInt(e.target.value))}
                   disabled={rodando}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-white disabled:opacity-50"
                 />
               </label>
-
               <label className="space-y-1">
                 <span className="text-xs text-gray-400">Estratégia (min)</span>
                 <input
-                  type="number"
-                  step="1"
-                  min="1"
+                  type="number" step="1" min="1"
                   value={params.intervalo_estrategia_min}
                   onChange={(e) => set("intervalo_estrategia_min", parseInt(e.target.value))}
                   disabled={rodando}
@@ -229,7 +237,6 @@ export default function PainelControle() {
                 />
               </label>
             </div>
-
             {!rodando && (
               <button
                 onClick={() => setParams(DEFAULTS)}
@@ -264,29 +271,39 @@ export default function PainelControle() {
             )}
           </div>
 
-          {/* Terminal de logs */}
+          {/* Terminal SSE */}
           <section className="space-y-2">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-              Terminal — últimas {logs.length} linhas
-            </h3>
-            <div className="bg-gray-900 rounded-xl p-3 h-80 overflow-y-auto font-mono text-xs text-gray-300 space-y-0.5 border border-gray-800">
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Terminal</h3>
+              <span className={`w-1.5 h-1.5 rounded-full ${sseDot[sseStatus]}`} title={sseStatus} />
+              <span className="text-xs text-gray-600">{sseStatus}</span>
+              <span className="ml-auto text-xs text-gray-600">{logs.length} linhas</span>
+            </div>
+            <div className="bg-gray-900 rounded-xl p-3 h-96 overflow-y-auto font-mono text-xs border border-gray-800">
               {logs.length === 0 ? (
-                <p className="text-gray-600">Sem logs. Inicie o bot para ver a saída aqui.</p>
+                <p className="text-gray-600">
+                  {sseStatus === "conectando" ? "Conectando ao stream..." : "Sem logs ainda."}
+                </p>
               ) : (
                 logs.map((linha, i) => (
-                  <div key={i} className={`leading-relaxed ${
-                    linha.includes("COMPRA") ? "text-green-400" :
-                    linha.includes("VENDA") || linha.includes("Take-Profit") || linha.includes("Stop") ? "text-red-400" :
-                    linha.includes("Erro") || linha.includes("erro") ? "text-yellow-400" :
-                    "text-gray-400"
-                  }`}>
+                  <div
+                    key={i}
+                    className={`leading-relaxed whitespace-pre-wrap break-all ${
+                      linha.includes("COMPRA")
+                        ? "text-green-400"
+                        : linha.includes("VENDA") || linha.includes("Take-Profit") || linha.includes("Stop")
+                        ? "text-red-400"
+                        : linha.includes("Erro") || linha.includes("erro") || linha.includes("ERROR")
+                        ? "text-yellow-400"
+                        : "text-gray-400"
+                    }`}
+                  >
                     {linha || "\u00a0"}
                   </div>
                 ))
               )}
               <div ref={logEndRef} />
             </div>
-            <p className="text-xs text-gray-600">Atualiza a cada 10 segundos</p>
           </section>
         </div>
       </div>

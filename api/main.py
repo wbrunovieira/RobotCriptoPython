@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import json
@@ -364,12 +365,14 @@ def bot_iniciar(params: BotParams):
 
     log_file = open(_BOT_LOG_FILE, "a")
     proc = subprocess.Popen(
-        [sys.executable, os.path.join(_ROOT, "robo_cripto.py")],
+        [sys.executable, "-u", os.path.join(_ROOT, "robo_cripto.py")],
         stdout=log_file,
         stderr=subprocess.STDOUT,
         cwd=_ROOT,
         env=env,
     )
+    log_file.close()  # filho já herdou o fd; fecha cópia do pai
+
     with open(_BOT_PID_FILE, "w") as f:
         f.write(str(proc.pid))
 
@@ -415,3 +418,43 @@ def bot_logs(linhas: int = Query(default=100)):
     with open(_BOT_LOG_FILE) as f:
         todas = f.readlines()
     return {"linhas": [l.rstrip("\n") for l in todas[-linhas:]]}
+
+
+@app.get("/bot/logs/stream")
+async def bot_logs_stream(token: str = Query(...), historico: int = Query(default=100)):
+    """SSE endpoint — token via query param (EventSource não suporta headers)."""
+    token_esperado = os.getenv("API_TOKEN", "")
+    if not token_esperado or token != token_esperado:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    async def generator():
+        # envia histórico inicial
+        if os.path.exists(_BOT_LOG_FILE):
+            with open(_BOT_LOG_FILE) as f:
+                linhas = f.readlines()
+            for linha in linhas[-historico:]:
+                texto = linha.rstrip("\n").replace("\n", " ")
+                yield f"data: {texto}\n\n"
+
+        # tail em tempo real
+        with open(_BOT_LOG_FILE, "a+") as _:
+            pass  # garante que o arquivo existe
+        with open(_BOT_LOG_FILE) as f:
+            f.seek(0, 2)  # vai para o fim
+            while True:
+                linha = f.readline()
+                if linha:
+                    texto = linha.rstrip("\n").replace("\n", " ")
+                    yield f"data: {texto}\n\n"
+                else:
+                    yield ": keepalive\n\n"
+                    await asyncio.sleep(1)
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

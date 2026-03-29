@@ -161,6 +161,11 @@ export const pararBot = () =>
 export const fetchBotLogs = (linhas = 100) =>
   apiFetch<{ linhas: string[] }>(`/bot/logs?linhas=${linhas}`);
 
+export function botLogsStreamUrl(historico = 100): string {
+  const token = getToken();
+  return `${API_URL}/bot/logs/stream?token=${encodeURIComponent(token)}&historico=${historico}`;
+}
+
 export function salvarToken(token: string) {
   localStorage.setItem("api_token", token);
 }
