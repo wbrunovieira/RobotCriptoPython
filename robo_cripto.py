@@ -318,7 +318,7 @@ def _gravar_status(rodando: bool = True):
     timestamp = pd.Timestamp.now(tz="America/Sao_Paulo").strftime("%Y-%m-%d %H:%M:%S")
     try:
         with open("status.json", "w") as f:
-            _json.dump({"rodando": rodando, "ultimo_ciclo": timestamp, "versao": "1.0.0"}, f)
+            _json.dump({"rodando": rodando, "pid": os.getpid(), "ultimo_ciclo": timestamp, "versao": "1.0.0"}, f)
     except Exception:
         pass
 

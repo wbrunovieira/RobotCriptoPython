@@ -308,14 +308,36 @@ def _bot_pid() -> Optional[int]:
 
 
 def _bot_rodando() -> bool:
+    # 1) verifica pelo PID salvo (bot iniciado pelo painel)
     pid = _bot_pid()
-    if pid is None:
-        return False
+    if pid is not None:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    # 2) fallback: verifica status.json (bot iniciado manualmente)
     try:
-        os.kill(pid, 0)
-        return True
-    except (ProcessLookupError, PermissionError):
-        return False
+        arquivo = _status_file()
+        if os.path.exists(arquivo):
+            with open(arquivo) as f:
+                dados = json.load(f)
+            if dados.get("rodando") is True:
+                # confirma que o processo ainda existe
+                pid_status = dados.get("pid")
+                if pid_status:
+                    try:
+                        os.kill(int(pid_status), 0)
+                        return True
+                    except (ProcessLookupError, PermissionError, TypeError):
+                        pass
+                else:
+                    return True
+    except Exception:
+        pass
+
+    return False
 
 
 class BotParams(BaseModel):
@@ -365,9 +387,25 @@ def bot_parar():
     return {"ok": True}
 
 
+def _bot_pid_efetivo() -> Optional[int]:
+    pid = _bot_pid()
+    if pid is not None:
+        return pid
+    # fallback: PID do status.json
+    try:
+        arquivo = _status_file()
+        if os.path.exists(arquivo):
+            with open(arquivo) as f:
+                dados = json.load(f)
+            return dados.get("pid")
+    except Exception:
+        pass
+    return None
+
+
 @app.get("/bot/info", dependencies=[Depends(_verificar_token)])
 def bot_info():
-    return {"rodando": _bot_rodando(), "pid": _bot_pid()}
+    return {"rodando": _bot_rodando(), "pid": _bot_pid_efetivo()}
 
 
 @app.get("/bot/logs", dependencies=[Depends(_verificar_token)])

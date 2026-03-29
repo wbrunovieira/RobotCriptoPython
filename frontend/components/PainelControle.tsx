@@ -23,6 +23,12 @@ export default function PainelControle() {
   const [erro, setErro] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  // busca status ao montar (para o botão no canto mostrar estado correto)
+  useEffect(() => {
+    fetchBotInfo().then(setInfo).catch(() => {});
+  }, []);
+
+  // polling completo enquanto o painel está aberto
   useEffect(() => {
     if (!aberto) return;
     let cancelado = false;
