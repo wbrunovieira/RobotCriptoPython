@@ -11,11 +11,13 @@ from stats import (
 
 
 def test_iniciar_stats_cria_arquivo(tmp_path):
-    arquivo = str(tmp_path / "stats" / "2026-03-28.json")
+    hoje = date.today().strftime("%Y-%m-%d")
+    arquivo = str(tmp_path / "stats" / f"{hoje}.json")
     stats = iniciar_stats_do_dia(saldo_inicial_brl=1000.0, arquivo=arquivo)
-    assert stats["data"] == "2026-03-28"
+    assert stats["data"] == hoje
     assert stats["saldo_inicial_brl"] == 1000.0
     assert stats["operacoes"] == []
+    assert "parametros" in stats
 
 
 def test_iniciar_stats_nao_sobrescreve_se_ja_existe(tmp_path):

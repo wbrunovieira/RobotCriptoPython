@@ -27,6 +27,8 @@ load_dotenv()
 api_key = os.getenv("KEY_BINANCE")
 secret_key = os.getenv("SECRET_BINANCE")
 
+BOT_ID = os.getenv("BOT_ID", "CRv1")  # identifica este bot nas ordens da Binance
+
 PERIODO_CANDLE = os.getenv("BOT_PERIODO_CANDLE", "15m")
 STOP_PCT = float(os.getenv("BOT_STOP_PCT", "0.05"))
 TAKE_PROFIT_PCT = float(os.getenv("BOT_TAKE_PROFIT_PCT", "0.01"))
@@ -36,6 +38,19 @@ MAX_TENTATIVAS = 3
 INTERVALO_MONITORAMENTO = int(os.getenv("BOT_INTERVALO_MONITORAMENTO", "60"))
 _intervalo_estrategia_min = int(os.getenv("BOT_INTERVALO_ESTRATEGIA_MIN", "15"))
 INTERVALO_ESTRATEGIA = _intervalo_estrategia_min * 60
+
+
+def _params_atuais() -> dict:
+    return {
+        "bot_id": BOT_ID,
+        "take_profit_pct": TAKE_PROFIT_PCT,
+        "stop_pct": STOP_PCT,
+        "teto_saldo_pct": TETO_SALDO_PCT,
+        "percentual_compra": PERCENTUAL_COMPRA,
+        "periodo_candle": PERIODO_CANDLE,
+        "intervalo_monitoramento_s": INTERVALO_MONITORAMENTO,
+        "intervalo_estrategia_min": _intervalo_estrategia_min,
+    }
 
 
 def criar_cliente():
@@ -115,16 +130,21 @@ def executar_compra(cliente, par, saldo_brl, preco_atual):
         Decimal(str(valor_a_usar / preco_atual)).quantize(Decimal(step_size), rounding=ROUND_DOWN)
     )
 
-    cliente.create_order(
+    client_order_id = f"{BOT_ID}-{simbolo}-{int(time.time() * 1000)}"
+    ordem = cliente.create_order(
         symbol=simbolo,
         side=SIDE_BUY,
         type=ORDER_TYPE_MARKET,
         quantity=quantidade_fmt,
+        newClientOrderId=client_order_id,
     )
     total_brl = round(quantidade_fmt * preco_atual, 2)
     timestamp = pd.Timestamp.now(tz="America/Sao_Paulo").strftime("%Y-%m-%d %H:%M:%S")
     log_operacao("COMPRA", simbolo, quantidade_fmt, preco_atual)
-    registrar_compra(preco_atual, quantidade_fmt, total_brl, timestamp, par=simbolo)
+    registrar_compra(
+        preco_atual, quantidade_fmt, total_brl, timestamp,
+        par=simbolo, bot_id=BOT_ID, order_id=client_order_id,
+    )
     preco_maximo, stop_price = atualizar_trailing_stop(preco_atual, None, None, STOP_PCT)
     salvar_posicao(True, preco_atual, preco_maximo=preco_maximo, stop_price=stop_price,
                    arquivo=arquivo_posicao(simbolo))
@@ -146,18 +166,23 @@ def executar_venda(cliente, par, saldo_ativo, preco_atual, motivo="Sinal de vend
     step_size = par["step_size"]
 
     quantidade_fmt = Decimal(str(saldo_ativo)).quantize(Decimal(step_size), rounding=ROUND_DOWN)
+    client_order_id = f"{BOT_ID}-{simbolo}-{int(time.time() * 1000)}"
     cliente.create_order(
         symbol=simbolo,
         side=SIDE_SELL,
         type=ORDER_TYPE_MARKET,
         quantity=float(quantidade_fmt),
+        newClientOrderId=client_order_id,
     )
     total_brl = round(float(quantidade_fmt) * preco_atual, 2)
     timestamp = pd.Timestamp.now(tz="America/Sao_Paulo").strftime("%Y-%m-%d %H:%M:%S")
     estado = carregar_posicao(arquivo=arquivo_posicao(simbolo))
     preco_entrada = estado.get("preco_entrada")
     log_operacao("VENDA", simbolo, float(quantidade_fmt), preco_atual)
-    registrar_venda(preco_atual, float(quantidade_fmt), total_brl, preco_entrada, timestamp, par=simbolo)
+    registrar_venda(
+        preco_atual, float(quantidade_fmt), total_brl, preco_entrada, timestamp,
+        par=simbolo, bot_id=BOT_ID, order_id=client_order_id,
+    )
     salvar_posicao(False, None, arquivo=arquivo_posicao(simbolo))
 
     stats = carregar_stats_do_dia()
@@ -333,7 +358,7 @@ def ciclo(cliente):
         if saldo > 0:
             print(f"  {ativo}: {saldo:.6f}")
 
-    iniciar_stats_do_dia(saldo_inicial_brl=saldo_brl)
+    iniciar_stats_do_dia(saldo_inicial_brl=saldo_brl, parametros=_params_atuais())
 
     stats = carregar_stats_do_dia()
     if stats:

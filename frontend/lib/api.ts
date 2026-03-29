@@ -134,6 +134,7 @@ export const downloadFiscalCsv = async (mes: string) => {
 };
 
 export interface BotParams {
+  bot_id: string;
   take_profit_pct: number;
   stop_pct: number;
   teto_saldo_pct: number;

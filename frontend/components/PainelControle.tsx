@@ -6,6 +6,7 @@ import {
 } from "@/lib/api";
 
 const DEFAULTS: BotParams = {
+  bot_id: "CRv1",
   take_profit_pct: 0.01,
   stop_pct: 0.05,
   teto_saldo_pct: 0.60,
@@ -173,6 +174,18 @@ export default function PainelControle() {
           <section className="space-y-3">
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Parâmetros</h3>
             <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1 col-span-2">
+                <span className="text-xs text-gray-400">ID do Bot</span>
+                <input
+                  type="text"
+                  value={params.bot_id}
+                  onChange={(e) => set("bot_id", e.target.value)}
+                  disabled={rodando}
+                  placeholder="ex: CRv1, bot-agressivo"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-white disabled:opacity-50"
+                />
+                <span className="text-xs text-gray-600">Aparece como prefixo nas ordens da Binance</span>
+              </label>
               <label className="space-y-1">
                 <span className="text-xs text-gray-400">Take Profit (%)</span>
                 <input

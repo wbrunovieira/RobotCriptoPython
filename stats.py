@@ -20,7 +20,11 @@ def _carregar(arquivo: str) -> dict:
         return json.load(f)
 
 
-def iniciar_stats_do_dia(saldo_inicial_brl: float, arquivo: str = None) -> dict:
+def iniciar_stats_do_dia(
+    saldo_inicial_brl: float,
+    arquivo: str = None,
+    parametros: dict = None,
+) -> dict:
     """Cria o arquivo de stats do dia. Se já existir, retorna sem sobrescrever."""
     if arquivo is None:
         arquivo = _caminho_padrao()
@@ -30,6 +34,7 @@ def iniciar_stats_do_dia(saldo_inicial_brl: float, arquivo: str = None) -> dict:
     dados = {
         "data": hoje,
         "saldo_inicial_brl": saldo_inicial_brl,
+        "parametros": parametros or {},
         "operacoes": [],
     }
     _salvar(dados, arquivo)
@@ -43,6 +48,8 @@ def registrar_compra(
     timestamp: str,
     arquivo: str = None,
     par: str = None,
+    bot_id: str = None,
+    order_id: str = None,
 ) -> dict:
     """Registra uma operação de compra no stats do dia."""
     if arquivo is None:
@@ -57,6 +64,10 @@ def registrar_compra(
     }
     if par:
         op["par"] = par
+    if bot_id:
+        op["bot_id"] = bot_id
+    if order_id:
+        op["order_id"] = order_id
     dados["operacoes"].append(op)
     _salvar(dados, arquivo)
     return dados
@@ -70,6 +81,8 @@ def registrar_venda(
     timestamp: str,
     arquivo: str = None,
     par: str = None,
+    bot_id: str = None,
+    order_id: str = None,
 ) -> dict:
     """Registra uma operação de venda com cálculo de lucro/prejuízo."""
     if arquivo is None:
@@ -95,6 +108,10 @@ def registrar_venda(
     }
     if par:
         op["par"] = par
+    if bot_id:
+        op["bot_id"] = bot_id
+    if order_id:
+        op["order_id"] = order_id
     dados["operacoes"].append(op)
     _salvar(dados, arquivo)
     return dados

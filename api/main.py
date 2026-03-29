@@ -342,6 +342,7 @@ def _bot_rodando() -> bool:
 
 
 class BotParams(BaseModel):
+    bot_id: str = "CRv1"
     take_profit_pct: float = 0.01
     stop_pct: float = 0.05
     teto_saldo_pct: float = 0.60
@@ -356,6 +357,7 @@ def bot_iniciar(params: BotParams):
         raise HTTPException(status_code=409, detail="Bot já está rodando")
 
     env = os.environ.copy()
+    env["BOT_ID"] = params.bot_id
     env["BOT_TAKE_PROFIT_PCT"] = str(params.take_profit_pct)
     env["BOT_STOP_PCT"] = str(params.stop_pct)
     env["BOT_TETO_SALDO_PCT"] = str(params.teto_saldo_pct)
