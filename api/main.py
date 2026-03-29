@@ -376,6 +376,7 @@ def bot_iniciar(params: BotParams):
         stderr=subprocess.STDOUT,
         cwd=_ROOT,
         env=env,
+        start_new_session=True,  # isola o bot dos sinais do uvicorn
     )
     log_file.close()  # filho já herdou o fd; fecha cópia do pai
 
