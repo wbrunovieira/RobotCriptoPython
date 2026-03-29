@@ -133,6 +133,34 @@ export const downloadFiscalCsv = async (mes: string) => {
   URL.revokeObjectURL(url);
 };
 
+export interface BotParams {
+  take_profit_pct: number;
+  stop_pct: number;
+  teto_saldo_pct: number;
+  periodo_candle: string;
+  intervalo_monitoramento: number;
+  intervalo_estrategia_min: number;
+}
+
+export interface BotInfo {
+  rodando: boolean;
+  pid: number | null;
+}
+
+export const fetchBotInfo = () => apiFetch<BotInfo>("/bot/info");
+
+export const iniciarBot = (params: BotParams) =>
+  apiFetch<{ ok: boolean; pid: number }>("/bot/iniciar", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+
+export const pararBot = () =>
+  apiFetch<{ ok: boolean }>("/bot/parar", { method: "POST" });
+
+export const fetchBotLogs = (linhas = 100) =>
+  apiFetch<{ linhas: string[] }>(`/bot/logs?linhas=${linhas}`);
+
 export function salvarToken(token: string) {
   localStorage.setItem("api_token", token);
 }

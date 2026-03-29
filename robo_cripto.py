@@ -27,14 +27,15 @@ load_dotenv()
 api_key = os.getenv("KEY_BINANCE")
 secret_key = os.getenv("SECRET_BINANCE")
 
-PERIODO_CANDLE = "15m"
-STOP_PCT = 0.05
-TAKE_PROFIT_PCT = 0.01   # vende ao atingir +1% do preço de entrada
-TETO_SALDO_PCT = 0.60    # cada par pode usar até 60% do BRL disponível
+PERIODO_CANDLE = os.getenv("BOT_PERIODO_CANDLE", "15m")
+STOP_PCT = float(os.getenv("BOT_STOP_PCT", "0.05"))
+TAKE_PROFIT_PCT = float(os.getenv("BOT_TAKE_PROFIT_PCT", "0.01"))
+TETO_SALDO_PCT = float(os.getenv("BOT_TETO_SALDO_PCT", "0.60"))
 PERCENTUAL_COMPRA = 0.90  # dentro do teto, usa 90%
 MAX_TENTATIVAS = 3
-INTERVALO_MONITORAMENTO = 60
-INTERVALO_ESTRATEGIA = 15 * 60  # avalia sinais a cada 15 minutos
+INTERVALO_MONITORAMENTO = int(os.getenv("BOT_INTERVALO_MONITORAMENTO", "60"))
+_intervalo_estrategia_min = int(os.getenv("BOT_INTERVALO_ESTRATEGIA_MIN", "15"))
+INTERVALO_ESTRATEGIA = _intervalo_estrategia_min * 60
 
 
 def criar_cliente():

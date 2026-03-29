@@ -12,6 +12,7 @@ import PosicaoCard from "@/components/PosicaoCard";
 import StatsResumo from "@/components/StatsResumo";
 import TabelaOperacoes from "@/components/TabelaOperacoes";
 import SaldoTotal from "@/components/SaldoTotal";
+import PainelControle from "@/components/PainelControle";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -52,6 +53,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
+      <PainelControle />
       <header className="bg-gray-900 border-b border-gray-800 px-4 py-3">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <h1 className="text-xl font-bold">Cripto Robot</h1>

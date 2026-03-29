@@ -2,6 +2,8 @@ import csv
 import io
 import json
 import os
+import signal
+import subprocess
 import sys
 from datetime import date
 from dotenv import load_dotenv
@@ -14,6 +16,8 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _ROOT)
 load_dotenv(os.path.join(_ROOT, ".env"))
 from fastapi import FastAPI, Depends, HTTPException, Query
+from pydantic import BaseModel
+from typing import Optional
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -267,7 +271,7 @@ def get_fiscal_csv(mes: str = Query(..., description="Formato: YYYY-MM")):
             writer.writerow({
                 "data": data_dia,
                 "tipo": op.get("tipo", ""),
-                "par": "SOLBRL",
+                "par": op.get("par", ""),
                 "preco": op.get("preco", ""),
                 "quantidade": op.get("quantidade", ""),
                 "total_brl": op.get("total_brl", ""),
@@ -283,3 +287,93 @@ def get_fiscal_csv(mes: str = Query(..., description="Formato: YYYY-MM")):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Bot process control
+# ---------------------------------------------------------------------------
+
+_BOT_PID_FILE = os.path.join(_ROOT, "bot.pid")
+_BOT_LOG_FILE = os.path.join(_ROOT, "bot.log")
+
+
+def _bot_pid() -> Optional[int]:
+    if not os.path.exists(_BOT_PID_FILE):
+        return None
+    try:
+        with open(_BOT_PID_FILE) as f:
+            return int(f.read().strip())
+    except Exception:
+        return None
+
+
+def _bot_rodando() -> bool:
+    pid = _bot_pid()
+    if pid is None:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
+class BotParams(BaseModel):
+    take_profit_pct: float = 0.01
+    stop_pct: float = 0.05
+    teto_saldo_pct: float = 0.60
+    periodo_candle: str = "15m"
+    intervalo_monitoramento: int = 60
+    intervalo_estrategia_min: int = 15
+
+
+@app.post("/bot/iniciar", dependencies=[Depends(_verificar_token)])
+def bot_iniciar(params: BotParams):
+    if _bot_rodando():
+        raise HTTPException(status_code=409, detail="Bot já está rodando")
+
+    env = os.environ.copy()
+    env["BOT_TAKE_PROFIT_PCT"] = str(params.take_profit_pct)
+    env["BOT_STOP_PCT"] = str(params.stop_pct)
+    env["BOT_TETO_SALDO_PCT"] = str(params.teto_saldo_pct)
+    env["BOT_PERIODO_CANDLE"] = params.periodo_candle
+    env["BOT_INTERVALO_MONITORAMENTO"] = str(params.intervalo_monitoramento)
+    env["BOT_INTERVALO_ESTRATEGIA_MIN"] = str(params.intervalo_estrategia_min)
+
+    log_file = open(_BOT_LOG_FILE, "a")
+    proc = subprocess.Popen(
+        [sys.executable, os.path.join(_ROOT, "robo_cripto.py")],
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        cwd=_ROOT,
+        env=env,
+    )
+    with open(_BOT_PID_FILE, "w") as f:
+        f.write(str(proc.pid))
+
+    return {"ok": True, "pid": proc.pid}
+
+
+@app.post("/bot/parar", dependencies=[Depends(_verificar_token)])
+def bot_parar():
+    if not _bot_rodando():
+        raise HTTPException(status_code=409, detail="Bot não está rodando")
+    pid = _bot_pid()
+    os.kill(pid, signal.SIGTERM)
+    if os.path.exists(_BOT_PID_FILE):
+        os.remove(_BOT_PID_FILE)
+    return {"ok": True}
+
+
+@app.get("/bot/info", dependencies=[Depends(_verificar_token)])
+def bot_info():
+    return {"rodando": _bot_rodando(), "pid": _bot_pid()}
+
+
+@app.get("/bot/logs", dependencies=[Depends(_verificar_token)])
+def bot_logs(linhas: int = Query(default=100)):
+    if not os.path.exists(_BOT_LOG_FILE):
+        return {"linhas": []}
+    with open(_BOT_LOG_FILE) as f:
+        todas = f.readlines()
+    return {"linhas": [l.rstrip("\n") for l in todas[-linhas:]]}
