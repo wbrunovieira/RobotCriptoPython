@@ -268,10 +268,20 @@ def monitorar_stop_par(cliente, par):
         # --- Trailing stop: atualiza máximo e verifica queda ---
         novo_maximo, novo_stop = atualizar_trailing_stop(preco_atual, preco_maximo, stop_price, STOP_PCT)
 
+        # status por par a cada checagem
+        dist_stop = ((preco_atual / novo_stop) - 1) * 100 if novo_stop else 0
+        dist_tp = ((preco_entrada * (1 + TAKE_PROFIT_PCT)) / preco_atual - 1) * 100 if preco_entrada else 0
+        variacao_entrada = ((preco_atual / preco_entrada) - 1) * 100 if preco_entrada else 0
+        print(
+            f"[{simbolo}] R${preco_atual:.2f} | entrada {variacao_entrada:+.2f}% | "
+            f"stop R${novo_stop:.2f} ({dist_stop:.1f}% acima) | "
+            f"tp em {dist_tp:.1f}%"
+        )
+
         if novo_maximo != preco_maximo or novo_stop != stop_price:
             salvar_posicao(True, preco_entrada, preco_maximo=novo_maximo, stop_price=novo_stop,
                            arquivo=arquivo_posicao(simbolo))
-            print(f"[{simbolo}][stop] Topo R${novo_maximo:.2f} → stop R${novo_stop:.2f}")
+            print(f"[{simbolo}][stop] ▲ Novo topo R${novo_maximo:.2f} → stop atualizado R${novo_stop:.2f}")
 
         if verificar_trailing_stop(preco_atual, novo_stop):
             variacao = ((preco_atual / preco_entrada) - 1) * 100 if preco_entrada else 0
