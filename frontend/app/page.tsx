@@ -15,11 +15,13 @@ import SaldoTotal from "@/components/SaldoTotal";
 import PainelControle from "@/components/PainelControle";
 import GraficoPerformance from "@/components/GraficoPerformance";
 import GraficoEvolucao from "@/components/GraficoEvolucao";
+import NotificacaoAportes from "@/components/NotificacaoAportes";
 
 export default function Dashboard() {
   const router = useRouter();
   const [mesAtual] = useState(() => new Date().toISOString().slice(0, 7));
   const [csvLoading, setCsvLoading] = useState(false);
+  const [evolucaoKey, setEvolucaoKey] = useState(0);
 
   useEffect(() => {
     if (!tokenSalvo()) router.push("/login");
@@ -65,6 +67,8 @@ export default function Dashboard() {
 
       <main className="max-w-6xl mx-auto p-4 space-y-6">
 
+        <NotificacaoAportes onAlterado={() => setEvolucaoKey((k) => k + 1)} />
+
         <section>
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Posições</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -97,7 +101,7 @@ export default function Dashboard() {
           </section>
         )}
 
-        <GraficoEvolucao />
+        <GraficoEvolucao key={evolucaoKey} />
 
         <GraficoPerformance />
 

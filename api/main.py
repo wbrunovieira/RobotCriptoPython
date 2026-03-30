@@ -53,6 +53,57 @@ def _stats_dir() -> str:
     return os.getenv("STATS_DIR", os.path.join(_ROOT, "stats"))
 
 
+def _aportes_file() -> str:
+    return os.path.join(_stats_dir(), "aportes.json")
+
+
+def _carregar_dados_aportes() -> dict:
+    """Retorna {"confirmados": [...], "rejeitados": [...]}."""
+    f = _aportes_file()
+    if not os.path.exists(f):
+        return {"confirmados": [], "rejeitados": []}
+    with open(f) as fp:
+        dados = json.load(fp)
+    # Retrocompatibilidade: arquivo antigo era uma lista plana
+    if isinstance(dados, list):
+        return {"confirmados": dados, "rejeitados": []}
+    return dados
+
+
+def _salvar_dados_aportes(dados: dict) -> None:
+    os.makedirs(_stats_dir(), exist_ok=True)
+    dados["confirmados"] = sorted(dados["confirmados"], key=lambda x: x["data"])
+    with open(_aportes_file(), "w") as fp:
+        json.dump(dados, fp, indent=2)
+
+
+def _carregar_aportes() -> list:
+    return _carregar_dados_aportes()["confirmados"]
+
+
+def _buscar_depositos_binance() -> list:
+    """Retorna depósitos BRL bem-sucedidos da Binance."""
+    api_key = os.getenv("KEY_BINANCE", "")
+    api_secret = os.getenv("SECRET_BINANCE", "")
+    cliente = BinanceClient(api_key, api_secret)
+    resp = cliente.get_fiat_deposit_withdraw_history(transactionType=0)
+    depositos = resp.get("data", [])
+    resultado = []
+    for dep in depositos:
+        if dep.get("fiatCurrency") != "BRL":
+            continue
+        if dep.get("status") not in ("Successful", "Success"):
+            continue
+        order_no = dep.get("orderNo", "")
+        ts = int(dep.get("createTime", 0))
+        data_str = date.fromtimestamp(ts / 1000).strftime("%Y-%m-%d")
+        valor = float(dep.get("indicatedAmount") or dep.get("amount") or 0)
+        if valor <= 0:
+            continue
+        resultado.append({"order_no": order_no, "data": data_str, "valor_brl": round(valor, 2)})
+    return resultado
+
+
 def _posicao_dir() -> str:
     return os.getenv("POSICAO_DIR", _ROOT)
 
@@ -497,6 +548,138 @@ def get_performance(periodo: str = Query(default="mes")):
 
 
 # ---------------------------------------------------------------------------
+# GET/POST /portfolio/aportes
+# ---------------------------------------------------------------------------
+
+@app.get("/portfolio/aportes", dependencies=[Depends(_verificar_token)])
+def get_aportes():
+    return _carregar_aportes()
+
+
+@app.get("/portfolio/aportes/pendentes", dependencies=[Depends(_verificar_token)])
+def get_aportes_pendentes():
+    """Retorna depósitos BRL da Binance ainda não classificados (nem confirmados nem rejeitados)."""
+    try:
+        depositos = _buscar_depositos_binance()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro Binance: {e}")
+
+    dados = _carregar_dados_aportes()
+    order_nos_vistos = (
+        {a.get("order_no") for a in dados["confirmados"] if a.get("order_no")}
+        | set(dados["rejeitados"])
+    )
+    pendentes = [d for d in depositos if d["order_no"] not in order_nos_vistos]
+    return pendentes
+
+
+@app.post("/portfolio/aporte/confirmar", dependencies=[Depends(_verificar_token)])
+def confirmar_aporte(body: dict):
+    """Confirma um depósito como aporte para esta automação."""
+    order_no = body.get("order_no")
+    data_str = body.get("data")
+    valor_brl = body.get("valor_brl")
+    if not order_no or not data_str or not valor_brl:
+        raise HTTPException(status_code=400, detail="order_no, data e valor_brl são obrigatórios")
+    dados = _carregar_dados_aportes()
+    if order_no not in {a.get("order_no") for a in dados["confirmados"]}:
+        dados["confirmados"].append({
+            "data": data_str,
+            "valor_brl": round(float(valor_brl), 2),
+            "order_no": order_no,
+            "fonte": "binance",
+        })
+    _salvar_dados_aportes(dados)
+    return {"ok": True}
+
+
+@app.post("/portfolio/aporte/rejeitar", dependencies=[Depends(_verificar_token)])
+def rejeitar_aporte(body: dict):
+    """Marca um depósito como não pertencente a esta automação."""
+    order_no = body.get("order_no")
+    if not order_no:
+        raise HTTPException(status_code=400, detail="order_no é obrigatório")
+    dados = _carregar_dados_aportes()
+    if order_no not in dados["rejeitados"]:
+        dados["rejeitados"].append(order_no)
+    _salvar_dados_aportes(dados)
+    return {"ok": True}
+
+
+@app.post("/portfolio/aporte", dependencies=[Depends(_verificar_token)])
+def post_aporte(body: dict):
+    """Registra um aporte manual (sem order_no da Binance)."""
+    data_str = body.get("data")
+    valor_brl = body.get("valor_brl")
+    if not data_str or not valor_brl or float(valor_brl) <= 0:
+        raise HTTPException(status_code=400, detail="data e valor_brl são obrigatórios")
+    dados = _carregar_dados_aportes()
+    dados["confirmados"].append({
+        "data": data_str,
+        "valor_brl": round(float(valor_brl), 2),
+        "fonte": "manual",
+    })
+    _salvar_dados_aportes(dados)
+    return {"ok": True}
+
+
+@app.delete("/portfolio/aporte", dependencies=[Depends(_verificar_token)])
+def delete_aporte(order_no: str = Query(default=""), data: str = Query(default=""), valor_brl: float = Query(default=0)):
+    dados = _carregar_dados_aportes()
+    for i, a in enumerate(dados["confirmados"]):
+        if order_no and a.get("order_no") == order_no:
+            dados["confirmados"].pop(i)
+            _salvar_dados_aportes(dados)
+            return {"ok": True}
+        if not order_no and a["data"] == data and abs(a["valor_brl"] - valor_brl) < 0.01:
+            dados["confirmados"].pop(i)
+            _salvar_dados_aportes(dados)
+            return {"ok": True}
+    raise HTTPException(status_code=404, detail="Aporte não encontrado")
+
+
+@app.patch("/portfolio/aporte", dependencies=[Depends(_verificar_token)])
+def patch_aporte(body: dict):
+    """Atualiza a data de um aporte (corrige data registrada pela Binance)."""
+    order_no = body.get("order_no", "")
+    data_antiga = body.get("data_antiga", "")
+    valor_brl = float(body.get("valor_brl", 0))
+    nova_data = body.get("nova_data")
+    if not nova_data:
+        raise HTTPException(status_code=400, detail="nova_data é obrigatório")
+    dados = _carregar_dados_aportes()
+    for a in dados["confirmados"]:
+        if order_no and a.get("order_no") == order_no:
+            a["data"] = nova_data
+            _salvar_dados_aportes(dados)
+            return {"ok": True}
+        if not order_no and a["data"] == data_antiga and abs(a["valor_brl"] - valor_brl) < 0.01:
+            a["data"] = nova_data
+            _salvar_dados_aportes(dados)
+            return {"ok": True}
+    raise HTTPException(status_code=404, detail="Aporte não encontrado")
+
+
+# PATCH /stats/{data}/saldo
+# ---------------------------------------------------------------------------
+
+@app.patch("/stats/{data_str}/saldo", dependencies=[Depends(_verificar_token)])
+def patch_saldo_dia(data_str: str, body: dict):
+    """Corrige o saldo_inicial_brl de um dia (para intra-day deposits não capturados pelo bot)."""
+    novo_saldo = body.get("saldo_inicial_brl")
+    if novo_saldo is None:
+        raise HTTPException(status_code=400, detail="saldo_inicial_brl obrigatório")
+    arquivo = _arquivo_stats(data_str)
+    if not os.path.exists(arquivo):
+        raise HTTPException(status_code=404, detail=f"Stats do dia {data_str} não encontrado")
+    with open(arquivo) as f:
+        stats = json.load(f)
+    stats["saldo_inicial_brl"] = round(float(novo_saldo), 2)
+    with open(arquivo, "w") as f:
+        json.dump(stats, f, indent=2)
+    return {"ok": True}
+
+
 # GET /portfolio/evolucao
 # ---------------------------------------------------------------------------
 
@@ -512,7 +695,8 @@ def get_portfolio_evolucao():
         return {"capital_inicial": 0, "pontos": []}
 
     arquivos = sorted(
-        f for f in os.listdir(stats_dir) if f.endswith(".json")
+        f for f in os.listdir(stats_dir)
+        if f.endswith(".json") and f != "aportes.json"
     )
     if not arquivos:
         return {"capital_inicial": 0, "pontos": []}
@@ -583,14 +767,50 @@ def get_portfolio_evolucao():
     except Exception:
         pass
 
-    # capital_inicial = primeiro ponto com posições abertas (dia após primeiro deploy)
-    capital_inicial = pontos[1]["valor_brl"] if len(pontos) > 1 else (pontos[0]["valor_brl"] if pontos else 0)
+    # Calcula capital acumulado por dia baseado em aportes registrados
+    aportes = _carregar_aportes()
+    total_investido = 0.0
+    aporte_idx = 0
 
     for p in pontos:
-        p["variacao_brl"] = round(p["valor_brl"] - capital_inicial, 2)
-        p["variacao_pct"] = round((p["valor_brl"] / capital_inicial - 1) * 100, 2) if capital_inicial else 0.0
+        # Soma todos os aportes até (inclusive) esse dia
+        while aporte_idx < len(aportes) and aportes[aporte_idx]["data"] <= p["data"]:
+            total_investido += aportes[aporte_idx]["valor_brl"]
+            aporte_idx += 1
+        p["capital_acumulado"] = round(total_investido, 2)
 
-    return {"capital_inicial": capital_inicial, "pontos": pontos}
+    # Fallback: sem aportes registrados, usa o primeiro ponto como base
+    if not aportes:
+        capital_base = pontos[0]["valor_brl"] if pontos else 0.0
+        for p in pontos:
+            p["capital_acumulado"] = round(capital_base, 2)
+
+    # Ajusta valor de dias históricos onde aportes chegaram após o snapshot do bot.
+    # Ex: PIX creditado após o primeiro ciclo do dia — stats capturou saldo sem o depósito.
+    # Fórmula segura: max(valor_stats, min(capital_acumulado, valor_stats + aportes_do_dia))
+    # — nunca reduz o valor; nunca ultrapassa o capital acumulado.
+    aportes_por_dia: dict = {}
+    for a in aportes:
+        d = a["data"]
+        aportes_por_dia[d] = round(aportes_por_dia.get(d, 0.0) + a["valor_brl"], 2)
+
+    for p in pontos:
+        if p.get("a_mercado"):
+            continue
+        aportes_dia = aportes_por_dia.get(p["data"], 0.0)
+        if aportes_dia > 0:
+            cap = p["capital_acumulado"]
+            ajustado = max(p["valor_brl"], min(cap, round(p["valor_brl"] + aportes_dia, 2)))
+            p["valor_brl"] = ajustado
+
+    total_investido_final = sum(a["valor_brl"] for a in aportes) if aportes else (pontos[0]["valor_brl"] if pontos else 0.0)
+
+    for p in pontos:
+        base = p["capital_acumulado"]
+        p["variacao_brl"] = round(p["valor_brl"] - base, 2)
+        p["variacao_pct"] = round((p["valor_brl"] / base - 1) * 100, 2) if base else 0.0
+
+    return {"capital_inicial": round(total_investido_final, 2), "total_investido": round(total_investido_final, 2), "pontos": pontos}
 
 
 @app.get("/bot/logs/stream")

@@ -187,6 +187,7 @@ export function botLogsStreamUrl(historico = 100): string {
 export interface PontoPortfolio {
   data: string;
   valor_brl: number;
+  capital_acumulado: number;
   variacao_brl: number;
   variacao_pct: number;
   a_mercado: boolean;
@@ -194,11 +195,71 @@ export interface PontoPortfolio {
 
 export interface EvolucaoPortfolio {
   capital_inicial: number;
+  total_investido: number;
   pontos: PontoPortfolio[];
 }
 
 export const fetchEvolucaoPortfolio = () =>
   apiFetch<EvolucaoPortfolio>("/portfolio/evolucao");
+
+export interface Aporte {
+  data: string;
+  valor_brl: number;
+  order_no?: string;
+  fonte?: "binance" | "manual";
+}
+
+export interface AportePendente {
+  order_no: string;
+  data: string;
+  valor_brl: number;
+}
+
+export const fetchAportes = () => apiFetch<Aporte[]>("/portfolio/aportes");
+
+export const fetchAportesPendentes = () =>
+  apiFetch<AportePendente[]>("/portfolio/aportes/pendentes");
+
+export const confirmarAporte = (p: AportePendente) =>
+  apiFetch<{ ok: boolean }>("/portfolio/aporte/confirmar", {
+    method: "POST",
+    body: JSON.stringify(p),
+  });
+
+export const rejeitarAporte = (order_no: string) =>
+  apiFetch<{ ok: boolean }>("/portfolio/aporte/rejeitar", {
+    method: "POST",
+    body: JSON.stringify({ order_no }),
+  });
+
+export const registrarAporte = (data: string, valor_brl: number) =>
+  apiFetch<{ ok: boolean }>("/portfolio/aporte", {
+    method: "POST",
+    body: JSON.stringify({ data, valor_brl }),
+  });
+
+export const deletarAporte = (order_no?: string, data?: string, valor_brl?: number) =>
+  apiFetch<{ ok: boolean }>(
+    `/portfolio/aporte?order_no=${encodeURIComponent(order_no ?? "")}&data=${encodeURIComponent(data ?? "")}&valor_brl=${valor_brl ?? 0}`,
+    { method: "DELETE" }
+  );
+
+export const corrigirSaldoDia = (data: string, saldo_inicial_brl: number) =>
+  apiFetch<{ ok: boolean }>(`/stats/${data}/saldo`, {
+    method: "PATCH",
+    body: JSON.stringify({ saldo_inicial_brl }),
+  });
+
+export const atualizarDataAporte = (a: Aporte, nova_data: string) =>
+  apiFetch<{ ok: boolean }>("/portfolio/aporte", {
+    method: "PATCH",
+    body: JSON.stringify({
+      order_no: a.order_no ?? "",
+      data_antiga: a.data,
+      valor_brl: a.valor_brl,
+      nova_data,
+    }),
+  });
 
 export function salvarToken(token: string) {
   localStorage.setItem("api_token", token);
