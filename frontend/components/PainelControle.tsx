@@ -43,7 +43,7 @@ export default function PainelControle() {
     return () => clearInterval(timer);
   }, [aberto]);
 
-  // SSE — abre quando painel abre, fecha quando fecha
+  // SSE — abre quando painel abre, fecha quando fecha, reconecta automaticamente
   useEffect(() => {
     if (!aberto) {
       esRef.current?.close();
@@ -52,31 +52,44 @@ export default function PainelControle() {
       return;
     }
 
-    setSseStatus("conectando");
-    setLogs([]);
+    let reconectarTimer: ReturnType<typeof setTimeout> | null = null;
+    let ativo = true;
 
-    const url = botLogsStreamUrl(200);
-    const es = new EventSource(url);
-    esRef.current = es;
+    function conectar() {
+      if (!ativo) return;
+      setSseStatus("conectando");
 
-    es.onopen = () => setSseStatus("conectado");
+      const url = botLogsStreamUrl(200);
+      const es = new EventSource(url);
+      esRef.current = es;
 
-    es.onmessage = (e) => {
-      if (e.data === "") return; // keepalive vazio
-      setLogs((prev) => {
-        const next = [...prev, e.data];
-        return next.length > 500 ? next.slice(-500) : next;
-      });
-    };
+      es.onopen = () => { if (ativo) setSseStatus("conectado"); };
 
-    es.onerror = () => {
-      setSseStatus("erro");
-      es.close();
-      esRef.current = null;
-    };
+      es.onmessage = (e) => {
+        if (!ativo) return;
+        if (e.data === "") return; // keepalive vazio
+        setLogs((prev) => {
+          const next = [...prev, e.data];
+          return next.length > 500 ? next.slice(-500) : next;
+        });
+      };
+
+      es.onerror = () => {
+        if (!ativo) return;
+        setSseStatus("erro");
+        es.close();
+        esRef.current = null;
+        // reconecta após 3 segundos
+        reconectarTimer = setTimeout(conectar, 3000);
+      };
+    }
+
+    conectar();
 
     return () => {
-      es.close();
+      ativo = false;
+      if (reconectarTimer) clearTimeout(reconectarTimer);
+      esRef.current?.close();
       esRef.current = null;
     };
   }, [aberto]);
