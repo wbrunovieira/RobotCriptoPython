@@ -49,7 +49,7 @@ def calcular_atr(dados: pd.DataFrame, periodo: int = 14) -> float:
 def stop_pct_por_atr(
     dados: pd.DataFrame,
     stop_pct_min: float = 0.015,
-    multiplicador: float = 1.5,
+    multiplicador: float = 2.2,
     periodo: int = 14,
 ) -> float:
     """Retorna o percentual de stop baseado no ATR do ativo.
@@ -201,6 +201,7 @@ def avaliar_sinal(
     pares_abertos: int = 0,
     max_posicoes: int = 2,
     agora: pd.Timestamp = None,
+    reentrada: bool = False,
 ) -> str | None:
     """Avalia o sinal de compra ou venda com base em médias móveis e RSI.
 
@@ -244,17 +245,18 @@ def avaliar_sinal(
             if preco_atual_val < ma50:
                 print(f"Filtro de regime: preço ({preco_atual_val:.2f}) abaixo da MA50 ({ma50:.2f}). Entrada bloqueada.")
                 return None
-            # Slope da MA50: bloqueia se estiver caindo
-            if len(fechamento) >= 53:
+            # Slope da MA50: bloqueia se estiver caindo (ignorado em reentradas — slope lento demais)
+            if not reentrada and len(fechamento) >= 53:
                 ma50_3h_atras = ma50_series.iloc[-4]
                 slope_pct = (ma50 - ma50_3h_atras) / ma50_3h_atras * 100
                 if slope_pct < _MA50_SLOPE_MAX_QUEDA_PCT:
                     print(f"Filtro: MA50 caindo ({slope_pct:.2f}%). Entrada bloqueada.")
                     return None
-        # Força mínima do crossover
+        # Força mínima do crossover — limiar reduzido em reentradas imediatas
+        limiar_separacao = 0.2 if reentrada else _MIN_CROSSOVER_SEPARATION_PCT
         separacao_pct = (media_rapida - media_devagar) / media_devagar * 100
-        if separacao_pct < _MIN_CROSSOVER_SEPARATION_PCT:
-            print(f"Filtro: crossover fraco ({separacao_pct:.2f}% < {_MIN_CROSSOVER_SEPARATION_PCT}%). Entrada bloqueada.")
+        if separacao_pct < limiar_separacao:
+            print(f"Filtro: crossover fraco ({separacao_pct:.2f}% < {limiar_separacao}%). Entrada bloqueada.")
             return None
         if not _volume_acima_media(dados):
             print("Filtro: volume abaixo da média. Entrada bloqueada.")

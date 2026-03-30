@@ -156,7 +156,7 @@ def _bloquear_portfolio(horas: int = 24):
 
 
 def _verificar_alta_forte(cliente, simbolo: str, preco_atual: float) -> bool:
-    """Retorna True se MA9 > MA21, preço acima da MA50 e RSI > 55 (mercado em alta forte)."""
+    """Retorna True se MA9 > MA21, preço acima da MA50, RSI > 55 e volume acima da média."""
     try:
         dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
         if dados.empty or len(dados) < 50:
@@ -166,7 +166,12 @@ def _verificar_alta_forte(cliente, simbolo: str, preco_atual: float) -> bool:
         ma21 = fech.rolling(21).mean().iloc[-1]
         ma50 = fech.rolling(50).mean().iloc[-1]
         rsi = calcular_rsi(fech)
-        return bool(ma9 > ma21 and preco_atual > ma50 and rsi > 55)
+        # Confirma volume: candle atual deve estar 30% acima da média de 20 candles
+        volume_forte = True
+        if "volume" in dados.columns and len(dados) >= 21:
+            vol = dados["volume"].astype(float)
+            volume_forte = float(vol.iloc[-1]) > float(vol.rolling(20).mean().iloc[-1]) * 1.3
+        return bool(ma9 > ma21 and preco_atual > ma50 and rsi > 55 and volume_forte)
     except Exception:
         return False
 
@@ -376,7 +381,7 @@ def monitorar_stop_par(cliente, par):
             saldo_brl, _ = obter_saldos(cliente)
             dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
             if not dados.empty:
-                sinal = avaliar_sinal(dados, posicao=False)
+                sinal = avaliar_sinal(dados, posicao=False, reentrada=True)
                 if sinal == "COMPRAR":
                     stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
                     print(f"[{simbolo}][tp] Reentrada imediata após take-profit.")
@@ -398,7 +403,7 @@ def monitorar_stop_par(cliente, par):
 
         # --- Break-even: quando lucro >= 1.5%, move stop para entrada + 0.1% ---
         novo_stop_be = verificar_breakeven(preco_atual, preco_entrada, novo_stop)
-        if novo_stop_be is not None:
+        if novo_stop_be is not None and novo_stop_be > novo_stop:
             novo_stop = novo_stop_be
             salvar_posicao(True, preco_entrada, preco_maximo=novo_maximo, stop_price=novo_stop,
                            arquivo=arquivo_posicao(simbolo))
@@ -423,7 +428,7 @@ def monitorar_stop_par(cliente, par):
             saldo_brl, _ = obter_saldos(cliente)
             dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
             if not dados.empty:
-                sinal = avaliar_sinal(dados, posicao=False)
+                sinal = avaliar_sinal(dados, posicao=False, reentrada=True)
                 if sinal == "COMPRAR":
                     stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
                     print(f"[{simbolo}][stop] Reentrada imediata após trailing stop.")
