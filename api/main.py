@@ -496,6 +496,103 @@ def get_performance(periodo: str = Query(default="mes")):
     }
 
 
+# ---------------------------------------------------------------------------
+# GET /portfolio/evolucao
+# ---------------------------------------------------------------------------
+
+@app.get("/portfolio/evolucao", dependencies=[Depends(_verificar_token)])
+def get_portfolio_evolucao():
+    """Retorna a evolução diária do portfolio: BRL + posições abertas (custo ou mercado).
+
+    Para dias históricos usa custo de entrada (conservador).
+    Para o dia mais recente busca preços de mercado na Binance.
+    """
+    stats_dir = _stats_dir()
+    if not os.path.exists(stats_dir):
+        return {"capital_inicial": 0, "pontos": []}
+
+    arquivos = sorted(
+        f for f in os.listdir(stats_dir) if f.endswith(".json")
+    )
+    if not arquivos:
+        return {"capital_inicial": 0, "pontos": []}
+
+    # Reconstrói posições abertas acumulando compras/vendas de todos os dias
+    posicoes: dict = {}  # {par: {quantidade, custo_total}}
+    pontos = []
+
+    for filename in arquivos:
+        data_str = filename[:-5]
+        with open(os.path.join(stats_dir, filename)) as f:
+            stats = json.load(f)
+
+        saldo_brl = stats.get("saldo_inicial_brl", 0.0)
+        custo_posicoes = sum(p["custo_total"] for p in posicoes.values())
+        valor_dia = round(saldo_brl + custo_posicoes, 2)
+
+        pontos.append({"data": data_str, "valor_brl": valor_dia, "a_mercado": False})
+
+        # Atualiza posições abertas com as operações do dia
+        for op in stats.get("operacoes", []):
+            par = op.get("par") or op.get("simbolo", "")
+            if not par:
+                continue
+            if op["tipo"] == "COMPRA":
+                if par not in posicoes:
+                    posicoes[par] = {"quantidade": 0.0, "custo_total": 0.0}
+                posicoes[par]["quantidade"] += float(op["quantidade"])
+                posicoes[par]["custo_total"] += float(op["total_brl"])
+            elif op["tipo"] == "VENDA" and par in posicoes:
+                pos = posicoes[par]
+                if pos["quantidade"] > 0:
+                    frac = min(float(op["quantidade"]) / pos["quantidade"], 1.0)
+                    pos["custo_total"] -= pos["custo_total"] * frac
+                    pos["quantidade"] -= float(op["quantidade"])
+                    if pos["quantidade"] < 0.0001:
+                        del posicoes[par]
+
+    # Ponto atual com preços de mercado (sobrescreve o último se for hoje)
+    hoje = date.today().strftime("%Y-%m-%d")
+    try:
+        api_key = os.getenv("KEY_BINANCE", "")
+        api_secret = os.getenv("SECRET_BINANCE", "")
+        cliente = BinanceClient(api_key, api_secret)
+
+        conta = cliente.get_account()
+        saldo_brl_atual = next(
+            (float(b["free"]) + float(b["locked"])
+             for b in conta["balances"] if b["asset"] == "BRL"), 0.0
+        )
+
+        valor_posicoes_mercado = 0.0
+        for par, pos in posicoes.items():
+            if pos["quantidade"] > 0.0001:
+                try:
+                    preco = float(cliente.get_symbol_ticker(symbol=par)["price"])
+                    valor_posicoes_mercado += pos["quantidade"] * preco
+                except Exception:
+                    valor_posicoes_mercado += pos["custo_total"]  # fallback: custo
+
+        valor_mercado = round(saldo_brl_atual + valor_posicoes_mercado, 2)
+
+        if pontos and pontos[-1]["data"] == hoje:
+            pontos[-1]["valor_brl"] = valor_mercado
+            pontos[-1]["a_mercado"] = True
+        else:
+            pontos.append({"data": hoje, "valor_brl": valor_mercado, "a_mercado": True})
+    except Exception:
+        pass
+
+    # capital_inicial = primeiro ponto com posições abertas (dia após primeiro deploy)
+    capital_inicial = pontos[1]["valor_brl"] if len(pontos) > 1 else (pontos[0]["valor_brl"] if pontos else 0)
+
+    for p in pontos:
+        p["variacao_brl"] = round(p["valor_brl"] - capital_inicial, 2)
+        p["variacao_pct"] = round((p["valor_brl"] / capital_inicial - 1) * 100, 2) if capital_inicial else 0.0
+
+    return {"capital_inicial": capital_inicial, "pontos": pontos}
+
+
 @app.get("/bot/logs/stream")
 async def bot_logs_stream(token: str = Query(...), historico: int = Query(default=100)):
     """SSE endpoint — token via query param (EventSource não suporta headers)."""

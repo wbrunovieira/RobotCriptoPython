@@ -184,6 +184,22 @@ export function botLogsStreamUrl(historico = 100): string {
   return `${API_URL}/bot/logs/stream?token=${encodeURIComponent(token)}&historico=${historico}`;
 }
 
+export interface PontoPortfolio {
+  data: string;
+  valor_brl: number;
+  variacao_brl: number;
+  variacao_pct: number;
+  a_mercado: boolean;
+}
+
+export interface EvolucaoPortfolio {
+  capital_inicial: number;
+  pontos: PontoPortfolio[];
+}
+
+export const fetchEvolucaoPortfolio = () =>
+  apiFetch<EvolucaoPortfolio>("/portfolio/evolucao");
+
 export function salvarToken(token: string) {
   localStorage.setItem("api_token", token);
 }

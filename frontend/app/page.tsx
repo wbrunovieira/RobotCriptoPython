@@ -14,6 +14,7 @@ import TabelaOperacoes from "@/components/TabelaOperacoes";
 import SaldoTotal from "@/components/SaldoTotal";
 import PainelControle from "@/components/PainelControle";
 import GraficoPerformance from "@/components/GraficoPerformance";
+import GraficoEvolucao from "@/components/GraficoEvolucao";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -95,6 +96,8 @@ export default function Dashboard() {
             </div>
           </section>
         )}
+
+        <GraficoEvolucao />
 
         <GraficoPerformance />
 
