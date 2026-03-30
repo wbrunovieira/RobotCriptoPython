@@ -439,8 +439,11 @@ def monitorar_stop_par(cliente, par):
 
 
 def monitorar_stop(cliente):
-    if verificar_stop_portfolio(cliente):
-        return  # stop de portfolio acionado — não processa stops individuais
+    try:
+        if verificar_stop_portfolio(cliente):
+            return  # stop de portfolio acionado — não processa stops individuais
+    except Exception as e:
+        print(f"[portfolio][stop] Erro ao verificar stop de portfolio (rede?): {e}. Continuando stops individuais.")
     for par in listar_pares():
         monitorar_stop_par(cliente, par)
 
@@ -578,7 +581,10 @@ def main():
                 tentativas = 0
             if _aguardar(espera):
                 break
-            cliente = criar_cliente()
+            try:
+                cliente = criar_cliente()
+            except Exception as ce:
+                print(f"Falha ao reconectar: {ce}. Tentando novamente no próximo ciclo.")
 
     print("Encerrando bot...")
     _gravar_status(rodando=False)
