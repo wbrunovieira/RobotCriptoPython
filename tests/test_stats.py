@@ -131,6 +131,29 @@ def test_calcular_resumo_misto(tmp_path):
     assert resumo["maior_perda"] < 0
 
 
+def test_registrar_venda_cross_par_nao_cruza_custo(tmp_path):
+    """Venda de SOLBRL não deve usar custo de XRPBRL comprado no mesmo dia."""
+    arquivo = str(tmp_path / "2026-03-29.json")
+    iniciar_stats_do_dia(300.0, arquivo=arquivo)
+
+    # Compra e venda de XRP no mesmo dia
+    registrar_compra(7.012, 24.0, 168.29, "06:54", arquivo=arquivo, par="XRPBRL")
+    registrar_venda(7.029, 24.0, 168.70, 7.012, "08:13", arquivo=arquivo, par="XRPBRL")
+    registrar_compra(7.034, 23.9, 168.11, "08:56", arquivo=arquivo, par="XRPBRL")
+
+    # Venda de SOL — compra foi em outro dia, fallback usa preco_entrada × quantidade
+    stats = registrar_venda(
+        preco=416.2, quantidade=0.207, total_brl=86.15,
+        preco_entrada=437.5,
+        timestamp="19:50", arquivo=arquivo, par="SOLBRL",
+    )
+
+    venda_sol = next(op for op in stats["operacoes"] if op.get("par") == "SOLBRL" and op["tipo"] == "VENDA")
+    # custo correto = 437.5 * 0.207 = 90.5625
+    assert venda_sol["lucro_brl"] == pytest.approx(-4.41, abs=0.05)
+    assert venda_sol["lucro_pct"] == pytest.approx(-4.87, abs=0.1)
+
+
 def test_calcular_resumo_sem_operacoes(tmp_path):
     arquivo = str(tmp_path / "2026-03-28.json")
     iniciar_stats_do_dia(1000.0, arquivo=arquivo)
