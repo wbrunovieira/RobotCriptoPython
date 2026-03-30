@@ -3,6 +3,9 @@ import numpy as np
 
 from persistencia import carregar_posicao
 
+_MIN_CROSSOVER_SEPARATION_PCT = 0.5   # % mínimo de separação MA9/MA21
+_MA50_SLOPE_MAX_QUEDA_PCT     = -0.2  # % queda da MA50 em 3 candles para bloquear
+
 
 def calcular_rsi(precos: pd.Series, periodo: int = 14) -> float:
     """Calcula o RSI usando suavização exponencial de Wilder."""
@@ -15,6 +18,78 @@ def calcular_rsi(precos: pd.Series, periodo: int = 14) -> float:
     rs = media_ganhos / media_perdas
     rsi = 100 - (100 / (1 + rs))
     return float(rsi.iloc[-1])
+
+
+def calcular_atr(dados: pd.DataFrame, periodo: int = 14) -> float:
+    """Calcula o Average True Range (ATR) dos últimos `periodo` candles.
+
+    Requer colunas 'maxima', 'minima' e 'fechamento'.
+    Retorna 0.0 se os dados forem insuficientes ou as colunas estiverem ausentes.
+    """
+    if "maxima" not in dados.columns or "minima" not in dados.columns:
+        return 0.0
+    if len(dados) < periodo + 1:
+        return 0.0
+
+    high  = dados["maxima"].astype(float)
+    low   = dados["minima"].astype(float)
+    close = dados["fechamento"].astype(float)
+    prev_close = close.shift(1)
+
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low  - prev_close).abs(),
+    ], axis=1).max(axis=1)
+
+    atr = tr.ewm(span=periodo, adjust=False).mean().iloc[-1]
+    return float(atr)
+
+
+def stop_pct_por_atr(
+    dados: pd.DataFrame,
+    stop_pct_min: float = 0.015,
+    multiplicador: float = 1.5,
+    periodo: int = 14,
+) -> float:
+    """Retorna o percentual de stop baseado no ATR do ativo.
+
+    stop = max(stop_pct_min, ATR_pct * multiplicador)
+    Garante que o stop nunca seja menor que stop_pct_min.
+    """
+    atr = calcular_atr(dados, periodo)
+    if atr == 0.0:
+        return stop_pct_min
+    preco = float(dados["fechamento"].iloc[-1])
+    if preco == 0:
+        return stop_pct_min
+    atr_pct = atr / preco
+    return max(stop_pct_min, atr_pct * multiplicador)
+
+
+def verificar_breakeven(
+    preco_atual: float,
+    preco_entrada: float,
+    stop_price: float,
+    ativacao_pct: float = 0.015,
+    margem_pct: float = 0.001,
+) -> float | None:
+    """Retorna o novo stop de break-even quando o lucro atinge `ativacao_pct`.
+
+    Move o stop para preco_entrada * (1 + margem_pct) — eliminando risco de perda.
+    Retorna None se:
+    - preco_entrada ou stop_price forem None
+    - o lucro ainda não atingiu o threshold
+    - o stop já está acima do nível de break-even (já foi ativado)
+    """
+    if preco_entrada is None or stop_price is None:
+        return None
+    nivel_breakeven = preco_entrada * (1 + margem_pct)
+    if stop_price >= nivel_breakeven:
+        return None  # já está em break-even ou melhor
+    if preco_atual >= preco_entrada * (1 + ativacao_pct):
+        return nivel_breakeven
+    return None
 
 
 def verificar_stop_loss(preco_atual: float, preco_entrada: float, limite_pct: float = 0.05) -> bool:
@@ -129,12 +204,13 @@ def avaliar_sinal(
 ) -> str | None:
     """Avalia o sinal de compra ou venda com base em médias móveis e RSI.
 
-    Filtros de entrada (apenas para COMPRAR):
-    - MA9 > MA21 (crossover)
-    - RSI entre 50 e rsi_sobrecomprado (momentum confirmado, sem sobrecompra)
-    - Volume do candle atual acima da média de 20 candles
-    - Horário permitido (bloqueia fins de semana)
-    - Número de posições abertas abaixo do limite
+    Sinal 1 — Crossover MA9/MA21 (trend-following):
+      - MA9 > MA21, RSI 50–70, volume ok
+      - Filtros: preço > MA50, MA50 não caindo, separação mínima do crossover
+
+    Sinal 2 — Reversão RSI sobrevendido (counter-trend):
+      - RSI estava abaixo de 30 e começou a subir
+      - Sem filtros de regime (por design — é entrada contra-tendência)
     """
     fechamento = dados["fechamento"].astype(float)
 
@@ -149,41 +225,48 @@ def avaliar_sinal(
             return "VENDER"
         return None
 
-    # Filtro: limite de posições simultâneas
+    # Filtros comuns a todos os sinais de compra
     if pares_abertos >= max_posicoes:
         print(f"Filtro: {pares_abertos}/{max_posicoes} posições abertas. Entrada bloqueada.")
         return None
 
-    # Filtro: horário (sem fins de semana)
     if not _horario_permitido(agora):
         print("Filtro: horário fora da janela operacional (fim de semana). Entrada bloqueada.")
         return None
 
-    # Filtro de regime: não entra se preço abaixo da MA50 (tendência baixista)
-    if len(fechamento) >= 50:
-        ma50 = fechamento.rolling(window=50).mean().iloc[-1]
-        preco_atual_val = float(fechamento.iloc[-1])
-        if preco_atual_val < ma50:
-            print(f"Filtro de regime: preço ({preco_atual_val:.2f}) abaixo da MA50 ({ma50:.2f}). Entrada bloqueada.")
-            return None
-
-    # Sinal 1: cruzamento MA9 > MA21 com RSI confirmando momentum (> 50)
+    # --- Sinal 1: Crossover MA9 > MA21 (trend-following) ---
     if media_rapida > media_devagar and 50 < rsi < rsi_sobrecomprado:
+        # Filtro de regime: preço vs MA50
+        if len(fechamento) >= 50:
+            ma50_series = fechamento.rolling(window=50).mean()
+            ma50 = ma50_series.iloc[-1]
+            preco_atual_val = float(fechamento.iloc[-1])
+            if preco_atual_val < ma50:
+                print(f"Filtro de regime: preço ({preco_atual_val:.2f}) abaixo da MA50 ({ma50:.2f}). Entrada bloqueada.")
+                return None
+            # Slope da MA50: bloqueia se estiver caindo
+            if len(fechamento) >= 53:
+                ma50_3h_atras = ma50_series.iloc[-4]
+                slope_pct = (ma50 - ma50_3h_atras) / ma50_3h_atras * 100
+                if slope_pct < _MA50_SLOPE_MAX_QUEDA_PCT:
+                    print(f"Filtro: MA50 caindo ({slope_pct:.2f}%). Entrada bloqueada.")
+                    return None
+        # Força mínima do crossover
+        separacao_pct = (media_rapida - media_devagar) / media_devagar * 100
+        if separacao_pct < _MIN_CROSSOVER_SEPARATION_PCT:
+            print(f"Filtro: crossover fraco ({separacao_pct:.2f}% < {_MIN_CROSSOVER_SEPARATION_PCT}%). Entrada bloqueada.")
+            return None
         if not _volume_acima_media(dados):
             print("Filtro: volume abaixo da média. Entrada bloqueada.")
             return None
         return "COMPRAR"
 
-    # Sinal 2: reversão de RSI sobrevendido (reentrada após queda brusca)
+    # --- Sinal 2: Reversão RSI sobrevendido (counter-trend) ---
     if detectar_reversao_rsi(fechamento, periodo=14, limite_sobrevendido=rsi_sobrevendido):
-        if not _horario_permitido(agora):
-            return None
-        if pares_abertos >= max_posicoes:
-            return None
         if not _volume_acima_media(dados):
             print("Filtro: volume abaixo da média (reversão RSI). Entrada bloqueada.")
             return None
-        print(f"Sinal de reversao RSI detectado (RSI subindo de sobrevendido)")
+        print("Sinal de reversao RSI detectado (RSI subindo de sobrevendido)")
         return "COMPRAR"
 
     return None

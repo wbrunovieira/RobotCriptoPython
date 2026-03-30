@@ -1,7 +1,12 @@
 import pandas as pd
 import numpy as np
 import pytest
-from estrategia import calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal, verificar_lucro_minimo, atualizar_trailing_stop, verificar_trailing_stop, detectar_reversao_rsi, verificar_take_profit
+from estrategia import (
+    calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal,
+    verificar_lucro_minimo, atualizar_trailing_stop, verificar_trailing_stop,
+    detectar_reversao_rsi, verificar_take_profit,
+    calcular_atr, stop_pct_por_atr, verificar_breakeven,
+)
 
 
 def _make_dados(n=60, tendencia="alta"):
@@ -76,11 +81,11 @@ def test_calcular_quantidade_nao_excede_saldo():
 # --- Avaliação de Sinal ---
 
 def test_sinal_compra_tendencia_alta():
-    # Simula alta moderada: alternando +2.0 / -1.5 → RSI ≈ 57, MA9 > MA21
+    # Alta consistente: +3.0 / -2.0 → RSI ≈ 60, separação MA9/MA21 > 0.5%
     precos = []
     base = 400.0
     for i in range(60):
-        base += 2.0 if i % 2 == 0 else -1.5
+        base += 3.0 if i % 2 == 0 else -2.0
         precos.append(base)
     dados = pd.DataFrame({"fechamento": precos})
     segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
@@ -292,3 +297,220 @@ def test_take_profit_btc_valores_reais():
     # BTC comprado a R$350.000, alvo de +5% = R$367.500
     assert verificar_take_profit(preco_atual=367_500.0, preco_entrada=350_000.0, take_pct=0.05) is True
     assert verificar_take_profit(preco_atual=360_000.0, preco_entrada=350_000.0, take_pct=0.05) is False
+
+
+# ---------------------------------------------------------------------------
+# Helpers compartilhados
+# ---------------------------------------------------------------------------
+
+def _make_ohlcv(n: int = 30, tendencia: float = 0.5, volatilidade: float = 5.0) -> pd.DataFrame:
+    """Gera DataFrame OHLCV determinístico. tendencia = ganho por candle."""
+    fechamentos = [400.0 + i * tendencia for i in range(n)]
+    return pd.DataFrame({
+        "fechamento": fechamentos,
+        "maxima":    [f + volatilidade for f in fechamentos],
+        "minima":    [f - volatilidade for f in fechamentos],
+    })
+
+
+def _make_dados_alta_forte(n: int = 60) -> pd.DataFrame:
+    """Alta com oscilação: MA9>MA21 (sep>0.5%), preço>MA50, RSI 55-65, MA50 subindo."""
+    precos = []
+    base = 400.0
+    for i in range(n):
+        # +3.0 / -2.0 alternado → net +0.5/candle, RSI ≈ 60
+        base += 3.0 if i % 2 == 0 else -2.0
+        precos.append(base)
+    return pd.DataFrame({
+        "fechamento": precos,
+        "maxima":    [p + 5.0 for p in precos],
+        "minima":    [p - 5.0 for p in precos],
+    })
+
+
+# ---------------------------------------------------------------------------
+# ATR (Average True Range)
+# ---------------------------------------------------------------------------
+
+def test_calcular_atr_retorna_positivo():
+    dados = _make_ohlcv(30, volatilidade=5.0)
+    assert calcular_atr(dados) > 0
+
+
+def test_calcular_atr_maior_volatilidade_gera_maior_atr():
+    baixa = _make_ohlcv(30, volatilidade=2.0)
+    alta  = _make_ohlcv(30, volatilidade=10.0)
+    assert calcular_atr(alta) > calcular_atr(baixa)
+
+
+def test_calcular_atr_dados_insuficientes_retorna_zero():
+    dados = _make_ohlcv(5)
+    assert calcular_atr(dados, periodo=14) == 0.0
+
+
+def test_calcular_atr_sem_colunas_ohlcv_retorna_zero():
+    # Só tem fechamento (sem maxima/minima) → retorna 0
+    dados = pd.DataFrame({"fechamento": [400.0 + i for i in range(20)]})
+    assert calcular_atr(dados) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Stop dinâmico por ATR
+# ---------------------------------------------------------------------------
+
+def test_stop_pct_por_atr_nunca_abaixo_do_minimo():
+    # Mesmo com baixa volatilidade, stop não cai abaixo de stop_pct_min
+    dados = _make_ohlcv(30, volatilidade=0.1)  # quase sem range
+    resultado = stop_pct_por_atr(dados, stop_pct_min=0.015)
+    assert resultado >= 0.015
+
+
+def test_stop_pct_por_atr_maior_para_ativo_mais_volatil():
+    baixa = _make_ohlcv(30, tendencia=0.5, volatilidade=2.0)
+    alta  = _make_ohlcv(30, tendencia=0.5, volatilidade=20.0)
+    assert stop_pct_por_atr(alta) > stop_pct_por_atr(baixa)
+
+
+def test_stop_pct_por_atr_sem_ohlcv_retorna_minimo():
+    # Sem colunas maxima/minima → fallback para stop mínimo
+    dados = pd.DataFrame({"fechamento": [400.0 + i for i in range(20)]})
+    assert stop_pct_por_atr(dados, stop_pct_min=0.015) == 0.015
+
+
+def test_stop_pct_por_atr_retorna_float():
+    dados = _make_ohlcv(30)
+    assert isinstance(stop_pct_por_atr(dados), float)
+
+
+# ---------------------------------------------------------------------------
+# Break-even automático
+# ---------------------------------------------------------------------------
+
+def test_breakeven_ativa_quando_lucro_atinge_threshold():
+    # Entrada 100, preço 115.5 (+1.5%) → move stop para 100.10 (entrada + 0.1%)
+    novo_stop = verificar_breakeven(
+        preco_atual=101.6, preco_entrada=100.0, stop_price=98.5,
+        ativacao_pct=0.015, margem_pct=0.001,
+    )
+    assert novo_stop == pytest.approx(100.0 * 1.001)
+
+
+def test_breakeven_nao_ativa_quando_lucro_insuficiente():
+    # Preço apenas +1% — ainda não atingiu os 1.5%
+    novo_stop = verificar_breakeven(
+        preco_atual=101.0, preco_entrada=100.0, stop_price=98.5,
+        ativacao_pct=0.015,
+    )
+    assert novo_stop is None
+
+
+def test_breakeven_nao_ativa_quando_stop_ja_acima_da_entrada():
+    # Stop já está acima da entrada → break-even já foi ativado antes
+    novo_stop = verificar_breakeven(
+        preco_atual=103.0, preco_entrada=100.0, stop_price=100.2,
+        ativacao_pct=0.015, margem_pct=0.001,
+    )
+    assert novo_stop is None
+
+
+def test_breakeven_sem_preco_entrada_retorna_none():
+    novo_stop = verificar_breakeven(
+        preco_atual=105.0, preco_entrada=None, stop_price=98.0,
+    )
+    assert novo_stop is None
+
+
+def test_breakeven_sem_stop_price_retorna_none():
+    novo_stop = verificar_breakeven(
+        preco_atual=105.0, preco_entrada=100.0, stop_price=None,
+    )
+    assert novo_stop is None
+
+
+def test_breakeven_valores_reais_btc():
+    # BTC entrada R$351.168, subiu para R$357k (+1.7%), stop em R$334k
+    novo_stop = verificar_breakeven(
+        preco_atual=357_000.0, preco_entrada=351_168.0, stop_price=334_000.0,
+        ativacao_pct=0.015, margem_pct=0.001,
+    )
+    assert novo_stop == pytest.approx(351_168.0 * 1.001)
+
+
+# ---------------------------------------------------------------------------
+# Filtro de separação mínima do crossover
+# ---------------------------------------------------------------------------
+
+def test_sinal_bloqueado_crossover_fraco():
+    """MA9 apenas 0.2% acima da MA21 → separação insuficiente, não deve comprar."""
+    # Gera série quase flat com leve tendência → separação MA9/MA21 < 0.5%
+    n = 60
+    base = 440.0
+    precos = []
+    for i in range(n):
+        # Oscila em banda estreita, net +0.08/candle → separação < 0.3%
+        base += 0.08 if i % 2 == 0 else -0.06
+        precos.append(base)
+    dados = pd.DataFrame({
+        "fechamento": precos,
+        "maxima":    [p + 1.0 for p in precos],
+        "minima":    [p - 1.0 for p in precos],
+    })
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    assert sinal is None
+
+
+def test_sinal_permitido_crossover_forte():
+    """MA9 claramente acima da MA21 (> 0.5%) → deve comprar."""
+    dados = _make_dados_alta_forte(60)
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    assert sinal == "COMPRAR"
+
+
+# ---------------------------------------------------------------------------
+# Filtro slope da MA50
+# ---------------------------------------------------------------------------
+
+def test_sinal_bloqueado_ma50_caindo():
+    """MA50 em queda forte → não deve entrar mesmo com crossover válido."""
+    # Cria série que começa alto e cai — MA50 vai estar caindo no final
+    n = 60
+    # Primeira metade: tendência de alta (para criar MA50 alta)
+    # Segunda metade: lateraliza/cai levemente enquanto MA9/MA21 ainda cruzam para cima brevemente
+    # A chave: MA50 calculada na janela vai incluir muitos candles altos → slope negativo
+    precos = [500.0 - i * 1.5 for i in range(n)]  # queda constante: MA50 em queda
+    # Adiciona micro-bounce no final para ter MA9 > MA21 mas MA50 ainda caindo
+    precos[-10:] = [precos[-11] + j * 1.0 for j in range(10)]
+    dados = pd.DataFrame({
+        "fechamento": precos,
+        "maxima":    [p + 5.0 for p in precos],
+        "minima":    [p - 5.0 for p in precos],
+    })
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    assert sinal is None
+
+
+def test_sinal_permitido_ma50_subindo():
+    """MA50 em alta consistente → filtro slope não bloqueia."""
+    dados = _make_dados_alta_forte(60)
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    assert sinal == "COMPRAR"
+
+
+# ---------------------------------------------------------------------------
+# Filtro MA50: aplicado ao crossover mas NÃO à reversão RSI
+# ---------------------------------------------------------------------------
+
+def test_reversao_rsi_nao_bloqueada_por_filtro_regime():
+    """RSI reversal é sinal counter-trend — não deve ser bloqueado por MA50.
+    Com 43 candles a MA50 não é calculada (< 50), garantindo que RSI reversal passe.
+    """
+    precos = [500.0 - i * 4 for i in range(40)]
+    precos += [precos[-1] + i * 6 for i in range(1, 4)]
+    dados = pd.DataFrame({"fechamento": precos})
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    assert sinal == "COMPRAR"

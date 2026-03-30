@@ -18,6 +18,8 @@ from estrategia import (
     verificar_take_profit,
     contar_posicoes_abertas,
     calcular_rsi,
+    stop_pct_por_atr,
+    verificar_breakeven,
 )
 from notificacao import enviar_whatsapp
 from stats import iniciar_stats_do_dia, registrar_compra, registrar_venda, calcular_resumo, carregar_stats_do_dia
@@ -35,7 +37,7 @@ PERIODO_CANDLE = os.getenv("BOT_PERIODO_CANDLE", "1h")
 STOP_PCT = float(os.getenv("BOT_STOP_PCT", "0.015"))
 TAKE_PROFIT_PCT = float(os.getenv("BOT_TAKE_PROFIT_PCT", "0.03"))
 TETO_SALDO_PCT = float(os.getenv("BOT_TETO_SALDO_PCT", "0.60"))
-MAX_POSICOES = int(os.getenv("BOT_MAX_POSICOES", "2"))
+MAX_POSICOES = int(os.getenv("BOT_MAX_POSICOES", "3"))
 PERCENTUAL_COMPRA = 0.90  # dentro do teto, usa 90%
 STOP_PORTFOLIO_PCT = float(os.getenv("BOT_STOP_PORTFOLIO_PCT", "0.05"))  # drawdown máximo do portfolio
 _BLOQUEIO_PORTFOLIO_FILE = "bloqueio_portfolio.json"
@@ -72,13 +74,14 @@ def pegando_dados(cliente, codigo, intervalo):
             "tempo_fechamento", "moedas_negociadas", "numero_trades",
             "volume_ativo_base_compra", "volume_ativo_cotacao", "-",
         ]
-        precos = precos[["fechamento", "tempo_fechamento"]]
+        precos = precos[["maxima", "minima", "fechamento", "tempo_fechamento"]]
         precos["tempo_fechamento"] = (
             pd.to_datetime(precos["tempo_fechamento"], unit="ms")
             .dt.tz_localize("UTC")
             .dt.tz_convert("America/Sao_Paulo")
         )
-        precos["fechamento"] = precos["fechamento"].astype(float)
+        for col in ("maxima", "minima", "fechamento"):
+            precos[col] = precos[col].astype(float)
         return precos
     except Exception as e:
         print(f"[{codigo}] Erro ao pegar dados: {e}")
@@ -228,10 +231,12 @@ def verificar_stop_portfolio(cliente) -> bool:
     return False
 
 
-def executar_compra(cliente, par, saldo_brl, preco_atual):
+def executar_compra(cliente, par, saldo_brl, preco_atual, stop_pct: float = None):
     simbolo = par["simbolo"]
     ativo = par["ativo"]
     step_size = par["step_size"]
+
+    stop_pct = stop_pct if stop_pct is not None else STOP_PCT
 
     saldo_disponivel = calcular_saldo_disponivel(saldo_brl, TETO_SALDO_PCT)
     valor_a_usar = saldo_disponivel * PERCENTUAL_COMPRA
@@ -254,14 +259,14 @@ def executar_compra(cliente, par, saldo_brl, preco_atual):
         preco_atual, quantidade_fmt, total_brl, timestamp,
         par=simbolo, bot_id=BOT_ID, order_id=client_order_id,
     )
-    preco_maximo, stop_price = atualizar_trailing_stop(preco_atual, None, None, STOP_PCT)
+    preco_maximo, stop_price = atualizar_trailing_stop(preco_atual, None, None, stop_pct)
     salvar_posicao(True, preco_atual, preco_maximo=preco_maximo, stop_price=stop_price,
                    arquivo=arquivo_posicao(simbolo))
     msg = (
         f"COMPRA {ativo}\n"
         f"Qtd: {quantidade_fmt} {ativo}\n"
         f"Preco: R${preco_atual:.2f}\n"
-        f"Stop inicial: R${stop_price:.2f}\n"
+        f"Stop inicial: R${stop_price:.2f} ({stop_pct*100:.1f}% ATR)\n"
         f"Total: R${total_brl:.2f} (teto: R${saldo_disponivel:.2f})"
     )
     print(msg)
@@ -373,8 +378,9 @@ def monitorar_stop_par(cliente, par):
             if not dados.empty:
                 sinal = avaliar_sinal(dados, posicao=False)
                 if sinal == "COMPRAR":
+                    stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
                     print(f"[{simbolo}][tp] Reentrada imediata após take-profit.")
-                    executar_compra(cliente, par, saldo_brl, preco_atual)
+                    executar_compra(cliente, par, saldo_brl, preco_atual, stop_pct=stop_atr)
             return
 
         # --- Trailing stop: atualiza máximo e verifica queda ---
@@ -390,7 +396,14 @@ def monitorar_stop_par(cliente, par):
             f"tp em {dist_tp:.1f}%"
         )
 
-        if novo_maximo != preco_maximo or novo_stop != stop_price:
+        # --- Break-even: quando lucro >= 1.5%, move stop para entrada + 0.1% ---
+        novo_stop_be = verificar_breakeven(preco_atual, preco_entrada, novo_stop)
+        if novo_stop_be is not None:
+            novo_stop = novo_stop_be
+            salvar_posicao(True, preco_entrada, preco_maximo=novo_maximo, stop_price=novo_stop,
+                           arquivo=arquivo_posicao(simbolo))
+            print(f"[{simbolo}][be] Break-even ativado! Stop → R${novo_stop:.2f}")
+        elif novo_maximo != preco_maximo or novo_stop != stop_price:
             salvar_posicao(True, preco_entrada, preco_maximo=novo_maximo, stop_price=novo_stop,
                            arquivo=arquivo_posicao(simbolo))
             print(f"[{simbolo}][stop] ▲ Novo topo R${novo_maximo:.2f} → stop atualizado R${novo_stop:.2f}")
@@ -412,8 +425,9 @@ def monitorar_stop_par(cliente, par):
             if not dados.empty:
                 sinal = avaliar_sinal(dados, posicao=False)
                 if sinal == "COMPRAR":
+                    stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
                     print(f"[{simbolo}][stop] Reentrada imediata após trailing stop.")
-                    executar_compra(cliente, par, saldo_brl, preco_atual)
+                    executar_compra(cliente, par, saldo_brl, preco_atual, stop_pct=stop_atr)
 
     except Exception as e:
         print(f"[{simbolo}][stop] Erro: {e}")
@@ -467,7 +481,9 @@ def ciclo_par(cliente, par, saldo_brl, saldo_ativo):
         if _portfolio_bloqueado():
             print(f"[{simbolo}] Compra bloqueada: stop de portfolio ativo.")
         else:
-            executar_compra(cliente, par, saldo_brl, preco_atual)
+            stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
+            print(f"[{simbolo}] Stop ATR calculado: {stop_atr*100:.2f}%")
+            executar_compra(cliente, par, saldo_brl, preco_atual, stop_pct=stop_atr)
     elif sinal == "VENDER":
         if verificar_lucro_minimo(preco_atual, preco_entrada):
             executar_venda(cliente, par, saldo_ativo, preco_atual)
