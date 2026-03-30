@@ -47,6 +47,54 @@ _intervalo_estrategia_min = int(os.getenv("BOT_INTERVALO_ESTRATEGIA_MIN", "15"))
 INTERVALO_ESTRATEGIA = _intervalo_estrategia_min * 60
 
 
+def _saldo_para_bot(saldo_brl: float, saldos: dict) -> float:
+    """Limita o saldo BRL disponível para compras ao total de aportes confirmados.
+
+    capital_em_posicoes = soma de (preco_entrada * saldo_ativo) por par aberto
+    saldo_para_bot = min(saldo_brl, total_aportes - capital_em_posicoes)
+
+    Se não houver aportes registrados, devolve saldo_brl sem restrição.
+    """
+    import json as _json
+    stats_dir = os.path.join(os.path.dirname(__file__), "stats")
+    aportes_file = os.path.join(stats_dir, "aportes.json")
+    if not os.path.exists(aportes_file):
+        return saldo_brl
+    try:
+        with open(aportes_file) as f:
+            dados = _json.load(f)
+        confirmados = dados.get("confirmados", [])
+        if not confirmados:
+            return saldo_brl
+        total_aportes = sum(float(a["valor"]) for a in confirmados)
+    except Exception as e:
+        print(f"[aporte] Erro ao ler aportes: {e}. Usando saldo real.")
+        return saldo_brl
+
+    # Capital já alocado em posições abertas
+    capital_em_posicoes = 0.0
+    for par in listar_pares():
+        simbolo = par["simbolo"]
+        ativo = par["ativo"]
+        estado = carregar_posicao(arquivo=arquivo_posicao(simbolo))
+        if not estado.get("posicao") or not estado.get("preco_entrada"):
+            continue
+        saldo_ativo = saldos.get(ativo, 0.0)
+        if saldo_ativo > 0:
+            capital_em_posicoes += estado["preco_entrada"] * saldo_ativo
+
+    disponivel_aporte = max(0.0, total_aportes - capital_em_posicoes)
+    saldo_limitado = min(saldo_brl, disponivel_aporte)
+    if saldo_limitado < saldo_brl:
+        print(
+            f"[aporte] Saldo BRL: R${saldo_brl:.2f} | "
+            f"Aportes: R${total_aportes:.2f} | "
+            f"Em posições: R${capital_em_posicoes:.2f} | "
+            f"Disponível para bot: R${saldo_limitado:.2f}"
+        )
+    return saldo_limitado
+
+
 def _params_atuais() -> dict:
     return {
         "bot_id": BOT_ID,
@@ -378,14 +426,14 @@ def monitorar_stop_par(cliente, par):
             executar_venda(cliente, par, saldos.get(par["ativo"], 0.0), preco_atual, motivo="Take-Profit")
 
             # Reavalia reentrada imediata: se ainda há sinal de compra, recompra
-            saldo_brl, _ = obter_saldos(cliente)
+            saldo_brl, saldos_re = obter_saldos(cliente)
             dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
             if not dados.empty:
                 sinal = avaliar_sinal(dados, posicao=False, reentrada=True)
                 if sinal == "COMPRAR":
                     stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
                     print(f"[{simbolo}][tp] Reentrada imediata após take-profit.")
-                    executar_compra(cliente, par, saldo_brl, preco_atual, stop_pct=stop_atr)
+                    executar_compra(cliente, par, _saldo_para_bot(saldo_brl, saldos_re), preco_atual, stop_pct=stop_atr)
             return
 
         # --- Trailing stop: atualiza máximo e verifica queda ---
@@ -425,14 +473,14 @@ def monitorar_stop_par(cliente, par):
             executar_venda(cliente, par, saldos.get(par["ativo"], 0.0), preco_atual, motivo="Trailing Stop")
 
             # Reavalia reentrada imediata: se ainda há sinal de compra, recompra
-            saldo_brl, _ = obter_saldos(cliente)
+            saldo_brl, saldos_re = obter_saldos(cliente)
             dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
             if not dados.empty:
                 sinal = avaliar_sinal(dados, posicao=False, reentrada=True)
                 if sinal == "COMPRAR":
                     stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
                     print(f"[{simbolo}][stop] Reentrada imediata após trailing stop.")
-                    executar_compra(cliente, par, saldo_brl, preco_atual, stop_pct=stop_atr)
+                    executar_compra(cliente, par, _saldo_para_bot(saldo_brl, saldos_re), preco_atual, stop_pct=stop_atr)
 
     except Exception as e:
         print(f"[{simbolo}][stop] Erro: {e}")
@@ -531,7 +579,8 @@ def ciclo(cliente):
 
     for par in listar_pares():
         saldo_ativo = saldos.get(par["ativo"], 0.0)
-        ciclo_par(cliente, par, saldo_brl, saldo_ativo)
+        saldo_para_bot = _saldo_para_bot(saldo_brl, saldos)
+        ciclo_par(cliente, par, saldo_para_bot, saldo_ativo)
         # Atualiza saldo BRL após possível compra
         saldo_brl, saldos = obter_saldos(cliente)
 
