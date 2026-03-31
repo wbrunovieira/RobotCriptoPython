@@ -341,12 +341,16 @@ export default function GraficoEvolucao() {
                 <th className="text-right py-1 font-medium">Investido</th>
                 <th className="text-right py-1 font-medium">Lucro R$</th>
                 <th className="text-right py-1 font-medium">Lucro %</th>
+                <th className="text-right py-1 font-medium">Δ dia</th>
               </tr>
             </thead>
             <tbody>
-              {data.pontos.map((p) => {
+              {data.pontos.map((p, i) => {
                 const pos = p.variacao_brl >= 0;
                 const editandoEste = editandoSaldo === p.data;
+                const prev = i > 0 ? data.pontos[i - 1] : null;
+                const deltaDia = prev !== null ? p.valor_brl - prev.valor_brl : null;
+                const deltaPos = deltaDia !== null ? deltaDia >= 0 : null;
                 return (
                   <tr key={p.data} className="border-b border-gray-800/50">
                     <td className="py-1.5 text-gray-300">
@@ -385,6 +389,9 @@ export default function GraficoEvolucao() {
                     </td>
                     <td className={`text-right font-mono ${pos ? "text-green-400" : "text-red-400"}`}>
                       {pos ? "+" : ""}{p.variacao_pct.toFixed(2)}%
+                    </td>
+                    <td className={`text-right font-mono ${deltaPos === null ? "text-gray-600" : deltaPos ? "text-green-400" : "text-red-400"}`}>
+                      {deltaDia === null ? "—" : `${deltaPos ? "+" : ""}R$ ${fmt(Math.abs(deltaDia))}`}
                     </td>
                   </tr>
                 );
