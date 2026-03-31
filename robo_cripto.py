@@ -66,7 +66,7 @@ def _saldo_para_bot(saldo_brl: float, saldos: dict) -> float:
         confirmados = dados.get("confirmados", [])
         if not confirmados:
             return saldo_brl
-        total_aportes = sum(float(a["valor"]) for a in confirmados)
+        total_aportes = sum(float(a.get("valor_brl", a.get("valor", 0))) for a in confirmados)
     except Exception as e:
         print(f"[aporte] Erro ao ler aportes: {e}. Usando saldo real.")
         return saldo_brl
