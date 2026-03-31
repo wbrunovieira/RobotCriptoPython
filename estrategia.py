@@ -198,17 +198,23 @@ def calcular_quantidade(saldo_brl: float, preco_atual: float, percentual: float 
     return round((saldo_brl * percentual) / preco_atual, 3)
 
 
-def _volume_acima_media(dados: pd.DataFrame, periodos: int = 20) -> bool:
-    """Retorna True se o volume do último candle está acima da média dos últimos N candles."""
+def _volume_acima_media(dados: pd.DataFrame, periodos: int = 20, multiplicador: float = 1.0) -> bool:
+    """Retorna True se o volume do último candle está acima de `multiplicador` vezes a média.
+
+    multiplicador=1.0 — comportamento padrão (dias úteis)
+    multiplicador=1.5 — fim de semana: exige volume 50% acima da média
+    """
     if "volume" not in dados.columns or len(dados) < periodos + 1:
         return True  # sem dados de volume, não bloqueia
     vol = dados["volume"].astype(float)
-    return float(vol.iloc[-1]) > float(vol.rolling(periodos).mean().iloc[-1])
+    return float(vol.iloc[-1]) > float(vol.rolling(periodos).mean().iloc[-1]) * multiplicador
 
 
 def _horario_permitido(agora: pd.Timestamp = None) -> bool:
-    """Bloqueia entradas de sexta 18h até segunda 09h (horário SP).
-    Fins de semana têm volume baixo e spreads maiores."""
+    """Retorna False no período de fim de semana (sexta 18h → segunda 09h, horário SP).
+    Usado para detectar janela de baixa liquidez — não bloqueia mais, apenas sinaliza
+    para que o filtro de volume seja mais rigoroso (1.5x em vez de 1.0x).
+    """
     if agora is None:
         agora = pd.Timestamp.now(tz="America/Sao_Paulo")
     dia = agora.dayofweek  # 0=seg, 4=sex, 5=sab, 6=dom
@@ -277,9 +283,12 @@ def avaliar_sinal(
         print(f"Filtro: {pares_abertos}/{max_posicoes} posições abertas. Entrada bloqueada.")
         return None
 
-    if not _horario_permitido(agora):
-        print("Filtro: horário fora da janela operacional (fim de semana). Entrada bloqueada.")
-        return None
+    # Fim de semana: permite entrada, mas exige volume 1.5x acima da média
+    # (mercado cripto é 24/7 — não bloqueamos, mas filtramos ruído de baixa liquidez)
+    fim_de_semana = not _horario_permitido(agora)
+    vol_multiplicador = 1.5 if fim_de_semana else 1.0
+    if fim_de_semana:
+        print("Aviso: fim de semana — volume mínimo elevado para 1.5x da média.")
 
     # --- Sinal 1: Crossover MA9 > MA21 (trend-following) ---
     if media_rapida > media_devagar and 50 < rsi < rsi_sobrecomprado:
@@ -304,8 +313,8 @@ def avaliar_sinal(
         if separacao_pct < limiar_separacao:
             print(f"Filtro: crossover fraco ({separacao_pct:.2f}% < {limiar_separacao}%). Entrada bloqueada.")
             return None
-        if not _volume_acima_media(dados):
-            print("Filtro: volume abaixo da média. Entrada bloqueada.")
+        if not _volume_acima_media(dados, multiplicador=vol_multiplicador):
+            print(f"Filtro: volume abaixo de {vol_multiplicador}x da média. Entrada bloqueada.")
             return None
         # Filtro de regime: ADX confirma que o mercado está em tendência
         # MA crossover tem EV negativo em mercado lateral (ADX < 20)
@@ -318,8 +327,8 @@ def avaliar_sinal(
 
     # --- Sinal 2: Reversão RSI sobrevendido (counter-trend) ---
     if detectar_reversao_rsi(fechamento, periodo=14, limite_sobrevendido=rsi_sobrevendido):
-        if not _volume_acima_media(dados):
-            print("Filtro: volume abaixo da média (reversão RSI). Entrada bloqueada.")
+        if not _volume_acima_media(dados, multiplicador=vol_multiplicador):
+            print(f"Filtro: volume abaixo de {vol_multiplicador}x da média (reversão RSI). Entrada bloqueada.")
             return None
         print("Sinal de reversao RSI detectado (RSI subindo de sobrevendido)")
         return "COMPRAR"

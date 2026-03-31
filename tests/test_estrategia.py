@@ -688,6 +688,34 @@ def test_sinal1_bloqueado_por_adx_baixo(monkeypatch):
     assert sinal is None
 
 
+def test_fim_de_semana_permite_entrada_com_volume_alto(monkeypatch):
+    """Fim de semana não bloqueia mais — mas exige volume 1.5x acima da média."""
+    import estrategia
+    monkeypatch.setattr(estrategia, "calcular_adx", lambda dados, periodo=14: 30.0)
+    dados = _make_dados_alta_forte(60)
+    # Adiciona volume: último candle com 2x a média (passa o filtro de 1.5x)
+    n = len(dados)
+    vol = [1000.0] * n
+    vol[-1] = 2000.0  # 2x a média → passa 1.5x
+    dados["volume"] = vol
+    sabado = pd.Timestamp("2026-03-28 14:00:00", tz="America/Sao_Paulo")  # sábado
+    sinal = avaliar_sinal(dados, posicao=False, agora=sabado)
+    assert sinal == "COMPRAR"
+
+
+def test_fim_de_semana_bloqueia_entrada_com_volume_baixo(monkeypatch):
+    """Fim de semana com volume fraco (< 1.5x) deve bloquear entrada."""
+    import estrategia
+    monkeypatch.setattr(estrategia, "calcular_adx", lambda dados, periodo=14: 30.0)
+    dados = _make_dados_alta_forte(60)
+    # Volume flat: último candle igual à média → não passa 1.5x
+    n = len(dados)
+    dados["volume"] = [1000.0] * n
+    sabado = pd.Timestamp("2026-03-28 14:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=sabado)
+    assert sinal is None
+
+
 def test_sinal2_nao_bloqueado_por_adx_baixo(monkeypatch):
     """Signal 2 (RSI reversal) não usa ADX — deve passar mesmo com ADX < 20."""
     import estrategia
