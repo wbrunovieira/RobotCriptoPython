@@ -121,7 +121,7 @@ export default function Dashboard() {
                 {csvLoading ? "Gerando..." : "↓ CSV Fiscal"}
               </button>
             </div>
-            <StatsResumo stats={statsMes} />
+            <StatsResumo stats={statsMes} titulo="No mês" />
           </div>
         )}
 
