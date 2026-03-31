@@ -35,7 +35,7 @@ BOT_ID = os.getenv("BOT_ID", "MACross1")  # identifica este bot nas ordens da Bi
 
 PERIODO_CANDLE = os.getenv("BOT_PERIODO_CANDLE", "1h")
 STOP_PCT = float(os.getenv("BOT_STOP_PCT", "0.015"))
-TAKE_PROFIT_PCT = float(os.getenv("BOT_TAKE_PROFIT_PCT", "0.03"))
+TAKE_PROFIT_PCT = float(os.getenv("BOT_TAKE_PROFIT_PCT", "0.02"))
 TETO_SALDO_PCT = float(os.getenv("BOT_TETO_SALDO_PCT", "0.60"))
 MAX_POSICOES = int(os.getenv("BOT_MAX_POSICOES", "3"))
 PERCENTUAL_COMPRA = 0.90  # dentro do teto, usa 90%
@@ -201,6 +201,24 @@ def _bloquear_portfolio(horas: int = 24):
     bloqueio_ate = (pd.Timestamp.now(tz="America/Sao_Paulo") + pd.Timedelta(hours=horas)).isoformat()
     with open(_BLOQUEIO_PORTFOLIO_FILE, "w") as f:
         _json.dump({"bloqueio_ate": bloqueio_ate}, f)
+
+
+def _limite_diario_atingido() -> bool:
+    """Retorna True se o prejuízo do dia ultrapassou 2% do capital inicial.
+    Bloqueia novas entradas para evitar o efeito cascata de perdas consecutivas."""
+    stats = carregar_stats_do_dia()
+    if not stats:
+        return False
+    capital_inicial = stats.get("saldo_inicial_brl", 0.0)
+    if capital_inicial <= 0:
+        return False
+    resumo = calcular_resumo(stats)
+    lucro = resumo.get("lucro_total_brl", 0.0)
+    limite = capital_inicial * 0.02
+    if lucro < -limite:
+        print(f"[risco] Limite diário atingido: R${lucro:.2f} ({lucro/capital_inicial*100:.1f}%). Novas entradas bloqueadas.")
+        return True
+    return False
 
 
 def _verificar_alta_forte(cliente, simbolo: str, preco_atual: float) -> bool:
@@ -423,17 +441,26 @@ def monitorar_stop_par(cliente, par):
                 f"Ganho: +{variacao:.2f}%"
             )
             _, saldos = obter_saldos(cliente)
-            executar_venda(cliente, par, saldos.get(par["ativo"], 0.0), preco_atual, motivo="Take-Profit")
+            saldo_ativo_venda = saldos.get(par["ativo"], 0.0)
+            capital_posicao_tp = saldo_ativo_venda * preco_atual  # BRL da posição fechada
+            executar_venda(cliente, par, saldo_ativo_venda, preco_atual, motivo="Take-Profit")
 
-            # Reavalia reentrada imediata: se ainda há sinal de compra, recompra
+            # Reavalia reentrada: bloqueada em fim de semana, limite diário ou sinal ausente
             saldo_brl, saldos_re = obter_saldos(cliente)
+            if _portfolio_bloqueado() or _limite_diario_atingido():
+                return
             dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
             if not dados.empty:
                 sinal = avaliar_sinal(dados, posicao=False, reentrada=True)
                 if sinal == "COMPRAR":
                     stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
-                    print(f"[{simbolo}][tp] Reentrada imediata após take-profit.")
-                    executar_compra(cliente, par, _saldo_para_bot(saldo_brl, saldos_re), preco_atual, stop_pct=stop_atr)
+                    # Limita re-entrada ao mesmo capital da posição fechada (evita posição 3x maior)
+                    saldo_reentrada = min(
+                        _saldo_para_bot(saldo_brl, saldos_re),
+                        capital_posicao_tp / (TETO_SALDO_PCT * PERCENTUAL_COMPRA),
+                    )
+                    print(f"[{simbolo}][tp] Reentrada após take-profit (capital: R${capital_posicao_tp:.2f}).")
+                    executar_compra(cliente, par, saldo_reentrada, preco_atual, stop_pct=stop_atr)
             return
 
         # --- Trailing stop: atualiza máximo e verifica queda ---
@@ -470,17 +497,26 @@ def monitorar_stop_par(cliente, par):
                 f"Atual: R${preco_atual:.2f} | Variacao: {variacao:.2f}%"
             )
             _, saldos = obter_saldos(cliente)
-            executar_venda(cliente, par, saldos.get(par["ativo"], 0.0), preco_atual, motivo="Trailing Stop")
+            saldo_ativo_venda = saldos.get(par["ativo"], 0.0)
+            capital_posicao_stop = saldo_ativo_venda * preco_atual  # BRL da posição fechada
+            executar_venda(cliente, par, saldo_ativo_venda, preco_atual, motivo="Trailing Stop")
 
-            # Reavalia reentrada imediata: se ainda há sinal de compra, recompra
+            # Reavalia reentrada: bloqueada em fim de semana, limite diário ou sinal ausente
             saldo_brl, saldos_re = obter_saldos(cliente)
+            if _portfolio_bloqueado() or _limite_diario_atingido():
+                return
             dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
             if not dados.empty:
                 sinal = avaliar_sinal(dados, posicao=False, reentrada=True)
                 if sinal == "COMPRAR":
                     stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
-                    print(f"[{simbolo}][stop] Reentrada imediata após trailing stop.")
-                    executar_compra(cliente, par, _saldo_para_bot(saldo_brl, saldos_re), preco_atual, stop_pct=stop_atr)
+                    # Limita re-entrada ao mesmo capital da posição fechada (evita posição 3x maior)
+                    saldo_reentrada = min(
+                        _saldo_para_bot(saldo_brl, saldos_re),
+                        capital_posicao_stop / (TETO_SALDO_PCT * PERCENTUAL_COMPRA),
+                    )
+                    print(f"[{simbolo}][stop] Reentrada após trailing stop (capital: R${capital_posicao_stop:.2f}).")
+                    executar_compra(cliente, par, saldo_reentrada, preco_atual, stop_pct=stop_atr)
 
     except Exception as e:
         print(f"[{simbolo}][stop] Erro: {e}")
@@ -536,6 +572,8 @@ def ciclo_par(cliente, par, saldo_brl, saldo_ativo):
     if sinal == "COMPRAR":
         if _portfolio_bloqueado():
             print(f"[{simbolo}] Compra bloqueada: stop de portfolio ativo.")
+        elif _limite_diario_atingido():
+            print(f"[{simbolo}] Compra bloqueada: limite de perda diária atingido.")
         else:
             stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
             print(f"[{simbolo}] Stop ATR calculado: {stop_atr*100:.2f}%")

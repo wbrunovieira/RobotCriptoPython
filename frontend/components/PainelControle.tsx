@@ -7,7 +7,7 @@ import {
 
 const DEFAULTS: BotParams = {
   bot_id: "MACross1",
-  take_profit_pct: 0.03,
+  take_profit_pct: 0.02,
   stop_pct: 0.015,
   teto_saldo_pct: 0.60,
   periodo_candle: "1h",

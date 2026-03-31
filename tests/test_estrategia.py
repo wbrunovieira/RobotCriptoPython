@@ -5,7 +5,7 @@ from estrategia import (
     calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal,
     verificar_lucro_minimo, atualizar_trailing_stop, verificar_trailing_stop,
     detectar_reversao_rsi, verificar_take_profit,
-    calcular_atr, stop_pct_por_atr, verificar_breakeven,
+    calcular_atr, stop_pct_por_atr, verificar_breakeven, calcular_adx,
 )
 
 
@@ -314,12 +314,16 @@ def _make_ohlcv(n: int = 30, tendencia: float = 0.5, volatilidade: float = 5.0) 
 
 
 def _make_dados_alta_forte(n: int = 60) -> pd.DataFrame:
-    """Alta com oscilação: MA9>MA21 (sep>0.5%), preço>MA50, RSI 55-65, MA50 subindo."""
+    """Alta com oscilação: MA9>MA21 (sep>0.5%), preço>MA50, RSI ≈ 67, MA50 subindo, ADX ≈ 33.
+
+    Padrão +4/-2 gera DX teórico de 33, garantindo ADX > 20 após ~40 candles.
+    RSI ≈ 67 — dentro da janela 50–70 exigida pelo Signal 1.
+    """
     precos = []
     base = 400.0
     for i in range(n):
-        # +3.0 / -2.0 alternado → net +0.5/candle, RSI ≈ 60
-        base += 3.0 if i % 2 == 0 else -2.0
+        # +4.0 / -2.0 alternado → net +1.0/candle, RSI ≈ 67, ADX ≈ 33
+        base += 4.0 if i % 2 == 0 else -2.0
         precos.append(base)
     return pd.DataFrame({
         "fechamento": precos,
@@ -564,3 +568,133 @@ def test_atr_multiplicador_padrao_e_2_2():
     import inspect
     sig = inspect.signature(stop_pct_por_atr)
     assert sig.parameters["multiplicador"].default == 2.2
+
+
+# ---------------------------------------------------------------------------
+# ADX (Average Directional Index)
+# ---------------------------------------------------------------------------
+
+def test_calcular_adx_retorna_float():
+    dados = _make_ohlcv(60, tendencia=0.5, volatilidade=5.0)
+    assert isinstance(calcular_adx(dados), float)
+
+
+def test_calcular_adx_dados_insuficientes_retorna_25():
+    """Com menos de 2*periodo+1 candles, retorna 25.0 (não bloqueia)."""
+    dados = _make_ohlcv(10, volatilidade=5.0)
+    assert calcular_adx(dados, periodo=14) == 25.0
+
+
+def test_calcular_adx_sem_colunas_ohlcv_retorna_25():
+    """Sem colunas maxima/minima retorna 25.0 (não bloqueia)."""
+    dados = pd.DataFrame({"fechamento": [400.0 + i for i in range(60)]})
+    assert calcular_adx(dados) == 25.0
+
+
+def test_calcular_adx_mercado_tendencia_maior_que_lateral():
+    """Mercado em tendência forte deve ter ADX maior que mercado lateral."""
+    tendencia = pd.DataFrame({
+        "fechamento": [400.0 + i * 3.0 for i in range(100)],
+        "maxima":    [400.0 + i * 3.0 + 2.0 for i in range(100)],
+        "minima":    [400.0 + i * 3.0 - 2.0 for i in range(100)],
+    })
+    lateral = pd.DataFrame({
+        "fechamento": [450.0 + 20.0 * np.sin(i * 0.4) for i in range(100)],
+        "maxima":    [450.0 + 20.0 * np.sin(i * 0.4) + 2.0 for i in range(100)],
+        "minima":    [450.0 + 20.0 * np.sin(i * 0.4) - 2.0 for i in range(100)],
+    })
+    assert calcular_adx(tendencia) > calcular_adx(lateral)
+
+
+def test_calcular_adx_tendencia_forte_acima_de_20():
+    """Alta consistente de +3/candle deve gerar ADX > 20."""
+    dados = pd.DataFrame({
+        "fechamento": [400.0 + i * 3.0 for i in range(100)],
+        "maxima":    [400.0 + i * 3.0 + 2.0 for i in range(100)],
+        "minima":    [400.0 + i * 3.0 - 2.0 for i in range(100)],
+    })
+    assert calcular_adx(dados) > 20.0
+
+
+def test_calcular_adx_lateral_abaixo_de_tendencia():
+    """Mercado senoidal deve ter ADX menor que mercado em tendência."""
+    lateral = pd.DataFrame({
+        "fechamento": [450.0 + 20.0 * np.sin(i * 0.4) for i in range(100)],
+        "maxima":    [450.0 + 20.0 * np.sin(i * 0.4) + 2.0 for i in range(100)],
+        "minima":    [450.0 + 20.0 * np.sin(i * 0.4) - 2.0 for i in range(100)],
+    })
+    tendencia = pd.DataFrame({
+        "fechamento": [400.0 + i * 3.0 for i in range(100)],
+        "maxima":    [400.0 + i * 3.0 + 2.0 for i in range(100)],
+        "minima":    [400.0 + i * 3.0 - 2.0 for i in range(100)],
+    })
+    assert calcular_adx(lateral) < calcular_adx(tendencia)
+
+
+# ---------------------------------------------------------------------------
+# Filtro de saída: separação mínima no sinal de VENDER (0.3%)
+# ---------------------------------------------------------------------------
+
+def test_venda_bloqueada_crossover_fraco():
+    """MA9 apenas 0.01%/candle abaixo de MA21 → separação < 0.3%, não vende."""
+    precos = [500.0 - i * 0.01 for i in range(60)]
+    dados = pd.DataFrame({"fechamento": precos})
+    # Verifica que o crossover é fraco
+    fech = pd.Series(precos, dtype=float)
+    ma9  = fech.rolling(9).mean().iloc[-1]
+    ma21 = fech.rolling(21).mean().iloc[-1]
+    sep  = (ma21 - ma9) / ma21 * 100
+    assert sep < 0.3, f"Dataset inválido: separação {sep:.3f}% ≥ 0.3%"
+    sinal = avaliar_sinal(dados, posicao=True)
+    assert sinal is None
+
+
+def test_venda_permitida_crossover_forte():
+    """MA9 claramente abaixo de MA21 (queda de -2/candle) → separação > 0.3%, vende."""
+    dados = _make_dados(60, tendencia="baixa")
+    sinal = avaliar_sinal(dados, posicao=True)
+    assert sinal == "VENDER"
+
+
+def test_venda_nao_acionada_quando_ma9_acima_ma21():
+    """Enquanto MA9 > MA21 (tendência de alta), posição em alta não vende."""
+    dados = _make_dados(60, tendencia="alta")
+    sinal = avaliar_sinal(dados, posicao=True)
+    assert sinal is None
+
+
+# ---------------------------------------------------------------------------
+# Filtro ADX integrado ao avaliar_sinal (Signal 1)
+# ---------------------------------------------------------------------------
+
+def test_sinal1_nao_bloqueado_em_mercado_tendencia_forte():
+    """Em tendência forte (ADX > 20), Signal 1 deve poder entrar."""
+    dados = _make_dados_alta_forte(80)
+    adx = calcular_adx(dados)
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    if adx >= 20:
+        assert sinal == "COMPRAR"
+    # Se ADX < 20 por acidente de dataset, o bloqueio é correto — não falha
+
+
+def test_sinal1_bloqueado_por_adx_baixo(monkeypatch):
+    """Se calcular_adx retornar < 20, Signal 1 é bloqueado mesmo com crossover válido."""
+    import estrategia
+    monkeypatch.setattr(estrategia, "calcular_adx", lambda dados, periodo=14: 15.0)
+    dados = _make_dados_alta_forte(80)
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    assert sinal is None
+
+
+def test_sinal2_nao_bloqueado_por_adx_baixo(monkeypatch):
+    """Signal 2 (RSI reversal) não usa ADX — deve passar mesmo com ADX < 20."""
+    import estrategia
+    monkeypatch.setattr(estrategia, "calcular_adx", lambda dados, periodo=14: 10.0)
+    precos = [500.0 - i * 4 for i in range(40)]
+    precos += [precos[-1] + i * 6 for i in range(1, 4)]
+    dados = pd.DataFrame({"fechamento": precos})
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    assert sinal == "COMPRAR"

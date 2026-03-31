@@ -46,6 +46,48 @@ def calcular_atr(dados: pd.DataFrame, periodo: int = 14) -> float:
     return float(atr)
 
 
+def calcular_adx(dados: pd.DataFrame, periodo: int = 14) -> float:
+    """Calcula o ADX (Average Directional Index) com suavização de Wilder.
+
+    ADX > 25 — tendência forte (favorável ao MA crossover)
+    ADX 20-25 — tendência fraca
+    ADX < 20 — mercado lateral/chop (desfavorável ao MA crossover)
+    Retorna 25.0 quando dados insuficientes para não bloquear entrada.
+    """
+    if "maxima" not in dados.columns or "minima" not in dados.columns:
+        return 25.0
+    if len(dados) < periodo * 2 + 1:
+        return 25.0
+
+    high  = dados["maxima"].astype(float)
+    low   = dados["minima"].astype(float)
+    close = dados["fechamento"].astype(float)
+
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low  - prev_close).abs(),
+    ], axis=1).max(axis=1)
+
+    up_move   = high.diff()
+    down_move = -low.diff()
+
+    dm_plus  = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    dm_minus = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+
+    alpha    = 1 / periodo
+    atr_s    = tr.ewm(alpha=alpha, adjust=False).mean()
+    di_plus  = 100 * dm_plus.ewm(alpha=alpha, adjust=False).mean() / atr_s
+    di_minus = 100 * dm_minus.ewm(alpha=alpha, adjust=False).mean() / atr_s
+
+    di_sum = (di_plus + di_minus).replace(0, np.nan)
+    dx     = (100 * (di_plus - di_minus).abs() / di_sum).fillna(0)
+    adx    = dx.ewm(alpha=alpha, adjust=False).mean()
+
+    return float(adx.iloc[-1])
+
+
 def stop_pct_por_atr(
     dados: pd.DataFrame,
     stop_pct_min: float = 0.015,
@@ -223,6 +265,10 @@ def avaliar_sinal(
 
     if posicao:
         if media_rapida < media_devagar:
+            separacao_venda_pct = (media_devagar - media_rapida) / media_devagar * 100
+            if separacao_venda_pct < 0.3:
+                print(f"Filtro de saída: crossover fraco ({separacao_venda_pct:.2f}% < 0.3%). Aguardando trailing stop.")
+                return None
             return "VENDER"
         return None
 
@@ -261,6 +307,13 @@ def avaliar_sinal(
         if not _volume_acima_media(dados):
             print("Filtro: volume abaixo da média. Entrada bloqueada.")
             return None
+        # Filtro de regime: ADX confirma que o mercado está em tendência
+        # MA crossover tem EV negativo em mercado lateral (ADX < 20)
+        adx = calcular_adx(dados)
+        if adx < 20:
+            print(f"Filtro: mercado lateral (ADX={adx:.1f} < 20). Entrada Signal 1 bloqueada.")
+            return None
+        print(f"ADX={adx:.1f} — tendência confirmada.")
         return "COMPRAR"
 
     # --- Sinal 2: Reversão RSI sobrevendido (counter-trend) ---
