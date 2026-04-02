@@ -278,3 +278,57 @@ export function removerToken() {
 export function tokenSalvo(): boolean {
   return !!getToken();
 }
+
+// --- Meme Bot ---
+
+export interface MemePosicao {
+  posicao: boolean;
+  simbolo?: string;
+  preco_entrada?: number;
+  preco_maximo?: number;
+  stop_price?: number;
+}
+
+export interface MemeStatus {
+  rodando: boolean;
+  pid?: number;
+  ultimo_ciclo?: string;
+  posicao: MemePosicao;
+  saldo_usdt: number;
+  pnl_aberto?: number;
+}
+
+export interface MemeScore {
+  simbolo: string;
+  score: number;
+  preco: number;
+  rsi: number;
+  adx: number;
+  volume_ratio: number;
+  variacao_pct: number;
+}
+
+export interface MemeAporte {
+  data: string;
+  valor_usdt: number;
+  fonte?: "manual" | "lucro_reinvestido";
+}
+
+export const fetchMemeStatus = () => apiFetch<MemeStatus>("/meme/status");
+export const fetchMemeScanner = () => apiFetch<MemeScore[]>("/meme/scanner");
+export const fetchMemeOperacoes = () => apiFetch<Operacao[]>("/meme/operacoes");
+export const fetchMemeStatsDia = () => apiFetch<ResumoStats>("/meme/stats/dia");
+export const fetchMemeAportes = () => apiFetch<MemeAporte[]>("/meme/aportes");
+export const registrarMemeAporte = (data: string, valor_usdt: number) =>
+  apiFetch<{ ok: boolean }>("/meme/aporte", {
+    method: "POST",
+    body: JSON.stringify({ data, valor_usdt }),
+  });
+export const deletarMemeAporte = (data: string, valor_usdt: number) =>
+  apiFetch<{ ok: boolean }>(`/meme/aporte?data=${data}&valor_usdt=${valor_usdt}`, { method: "DELETE" });
+export const iniciarMemeBot = () =>
+  apiFetch<{ ok: boolean }>("/meme/bot/iniciar", { method: "POST" });
+export const pararMemeBot = () =>
+  apiFetch<{ ok: boolean }>("/meme/bot/parar", { method: "POST" });
+export const memeBotLogsStreamUrl = (linhas = 200) =>
+  `${process.env.NEXT_PUBLIC_API_URL ?? ""}/meme/bot/logs?linhas=${linhas}&token=${typeof window !== "undefined" ? localStorage.getItem("api_token") ?? "" : ""}`;

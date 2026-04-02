@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.rotas.brl import router as brl_router
 from api.rotas.aportes import router as aportes_router
 from api.rotas.fiscal import router as fiscal_router
+from api.rotas.meme import router as meme_router
 
 app = FastAPI(title="Cripto Robot API", version="1.0.0")
 
@@ -24,3 +25,4 @@ app.add_middleware(
 app.include_router(brl_router)
 app.include_router(aportes_router)
 app.include_router(fiscal_router)
+app.include_router(meme_router)
