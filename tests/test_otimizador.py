@@ -2,7 +2,7 @@ import pytest
 import json
 import os
 import pandas as pd
-from otimizador import (
+from analysis.otimizador import (
     gerar_combinacoes,
     otimizar,
     melhor_configuracao,

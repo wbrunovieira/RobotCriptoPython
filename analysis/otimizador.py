@@ -2,7 +2,7 @@ import json
 import os
 from itertools import product
 
-from backtesting import simular_estrategia, calcular_metricas, calcular_drawdown_maximo
+from analysis.backtesting import simular_estrategia, calcular_metricas, calcular_drawdown_maximo
 
 # Valores padrão para o grid search
 _MA_RAPIDAS_PADRAO = [5, 7, 10]

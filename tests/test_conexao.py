@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from conexao import calcular_offset_tempo, criar_cliente_sincronizado
+from infra.binance_client import calcular_offset_tempo, criar_cliente_sincronizado
 
 
 def test_offset_quando_servidor_adiantado():
@@ -21,8 +21,8 @@ def test_criar_cliente_sincronizado_aplica_offset():
     mock_client = MagicMock()
     mock_client.get_server_time.return_value = {"serverTime": 1000003000}
 
-    with patch("conexao.Client") as MockClient, \
-         patch("conexao.time") as mock_time:
+    with patch("infra.binance_client.Client") as MockClient, \
+         patch("infra.binance_client.time") as mock_time:
 
         MockClient.return_value = mock_client
         mock_time.time.return_value = 1000000.0  # 1000000000 ms
@@ -36,8 +36,8 @@ def test_criar_cliente_sincronizado_offset_negativo():
     mock_client = MagicMock()
     mock_client.get_server_time.return_value = {"serverTime": 999998000}
 
-    with patch("conexao.Client") as MockClient, \
-         patch("conexao.time") as mock_time:
+    with patch("infra.binance_client.Client") as MockClient, \
+         patch("infra.binance_client.time") as mock_time:
 
         MockClient.return_value = mock_client
         mock_time.time.return_value = 1000000.0  # 1000000000 ms
@@ -51,8 +51,8 @@ def test_criar_cliente_sincronizado_retorna_cliente():
     mock_client = MagicMock()
     mock_client.get_server_time.return_value = {"serverTime": 1000000000}
 
-    with patch("conexao.Client") as MockClient, \
-         patch("conexao.time") as mock_time:
+    with patch("infra.binance_client.Client") as MockClient, \
+         patch("infra.binance_client.time") as mock_time:
 
         MockClient.return_value = mock_client
         mock_time.time.return_value = 1000000.0

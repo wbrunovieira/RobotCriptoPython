@@ -1,13 +1,8 @@
 import pandas as pd
 
-from estrategia import (
-    calcular_quantidade,
-    calcular_rsi,
-    detectar_reversao_rsi,
-    atualizar_trailing_stop,
-    verificar_trailing_stop,
-    verificar_lucro_minimo,
-)
+from core.indicadores import calcular_rsi
+from core.risco import atualizar_trailing_stop, verificar_trailing_stop, verificar_lucro_minimo
+from core.sinais import calcular_quantidade, detectar_reversao_rsi
 
 
 def _avaliar_sinal_backtest(

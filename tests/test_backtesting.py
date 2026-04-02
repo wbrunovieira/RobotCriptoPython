@@ -1,7 +1,7 @@
 import pytest
 import pandas as pd
 from unittest.mock import MagicMock
-from backtesting import (
+from analysis.backtesting import (
     simular_estrategia,
     calcular_metricas,
     calcular_drawdown_maximo,

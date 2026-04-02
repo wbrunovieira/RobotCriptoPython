@@ -89,9 +89,6 @@ def registrar_venda(
         arquivo = _caminho_padrao()
     dados = _carregar(arquivo)
 
-    # Encontra a compra correspondente para calcular o custo real.
-    # Filtra pelo mesmo par para evitar cruzar custo entre ativos diferentes.
-    # Fallback: preco_entrada × quantidade (compra pode ter sido em outro dia).
     custo_brl = next(
         (op["total_brl"] for op in reversed(dados["operacoes"])
          if op["tipo"] == "COMPRA" and (par is None or op.get("par") == par)),

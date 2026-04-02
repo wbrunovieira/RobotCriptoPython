@@ -1,6 +1,6 @@
 import os
 import pytest
-from persistencia import salvar_posicao, carregar_posicao
+from infra.persistencia import salvar_posicao, carregar_posicao
 
 
 def test_salvar_e_carregar_posicao(tmp_path):

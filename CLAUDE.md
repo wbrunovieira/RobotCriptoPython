@@ -13,30 +13,83 @@ Requires a `.env` file with:
 ```
 KEY_BINANCE=<api_key>
 SECRET_BINANCE=<api_secret>
+API_TOKEN=<api_token>
 ```
+
+## Running Tests
+
+```bash
+source venv/bin/activate
+python -m pytest tests/ -q           # all tests
+python -m pytest tests/test_foo.py   # single file
+```
+
+239 tests — must all pass before any merge.
 
 ## Architecture
 
-This is a live cryptocurrency trading bot for the SOLBRL pair on Binance. There is no simulation mode — all orders are real.
+Layered architecture for multi-bot support. All production orders are real (no simulation mode).
 
-**Single main file: `robo_cripto.py`**
+```
+core/           — Pure domain logic (no I/O, 100% testable)
+  indicadores.py    RSI, ATR, ADX calculations
+  risco.py          stop-loss, trailing stop, take-profit, break-even
+  sinais.py         MA crossover + RSI reversal signal evaluation
 
-Execution flow (infinite loop, 1-hour cadence):
-1. Display non-zero account balances
-2. `pegando_dados()` — fetches 1000 hourly OHLCV candles from Binance
-3. `estrategia_trade()` — computes 7-period (fast) and 40-period (slow) moving averages; buys when fast > slow (if not already in position), sells when fast < slow (if in position)
-4. `log_operacao()` — appends trade events to `log_operacoes.txt` with São Paulo timezone timestamps
-5. `time.sleep(3600)`
+infra/          — All I/O and external services
+  binance_client.py   Binance API client (sync clock)
+  persistencia.py     position state JSON files
+  stats_store.py      daily trade stats JSON files
+  reserva_store.py    USDC reserve + P&L tracking
+  notificacao.py      WhatsApp via Evolution API
 
-**Position state** is held in the `posicao_atual` boolean in the main loop and passed into/returned from `estrategia_trade()` each cycle. It is not persisted to disk, so restarting the bot resets the position to `False` (not bought).
+pares/          — Trading pair universe
+  brl.py            BRL pairs list (SOL/BTC/ETH/XRP/BNB)
+  base.py           pair utilities (arquivo_posicao, calcular_saldo_disponivel)
 
-**Trade sizing**: buys use the fixed `quantidade = 0.015` SOL; sells use the actual free balance retrieved from the account at execution time (rounded down to 4 decimal places).
+bots/brl/       — BRL bot orchestration
+  config.py         env-var config constants
+  robo.py           full bot logic (ciclo, executar_compra, executar_venda, etc.)
 
-**`robo_cripto_parte_1.py`** is a one-off test script for verifying API connectivity and account balances — not part of the main bot flow.
+api/            — FastAPI REST API
+  main.py           thin app entry + router registration
+  deps.py           shared helpers and auth dependency
+  rotas/
+    brl.py          trading routes (status, posicoes, stats, saldos, bot control)
+    aportes.py      portfolio/aporte CRUD
+    fiscal.py       fiscal CSV export + monthly stats
+
+analysis/       — Offline tools (not used in production)
+  backtesting.py
+  otimizador.py
+```
+
+**Backward-compat wrappers** (kept for `from X import Y` compatibility):
+`estrategia.py`, `persistencia.py`, `conexao.py`, `notificacao.py`, `stats.py`, `reserva.py` — all thin re-exports from their `core/` or `infra/` counterparts.
+
+**Entry point**: `robo_cripto.py` → `bots/brl/robo.py` → runs the infinite loop.
+
+**Position state**: persisted to `posicao_{SIMBOLO}.json` per pair (survives restarts).
+
+**Strategy**: MA9/MA21 crossover + RSI reversal, with ADX filter, ATR-based trailing stop, break-even, take-profit, weekend volume filter, daily loss limit, portfolio stop.
+
+**Multi-pair**: SOL/BTC/ETH/XRP/BNB all in BRL; up to `MAX_POSICOES` concurrent positions; each pair limited to `TETO_SALDO_PCT` (60%) of available BRL.
+
+## Key Config (env vars)
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `BOT_STOP_PCT` | 0.015 | Trailing stop % |
+| `BOT_TAKE_PROFIT_PCT` | 0.02 | Take-profit target |
+| `BOT_TETO_SALDO_PCT` | 0.60 | Max BRL per pair |
+| `BOT_MAX_POSICOES` | 3 | Max concurrent positions |
+| `BOT_INTERVALO_MONITORAMENTO` | 60 | Stop-check interval (s) |
+| `BOT_INTERVALO_ESTRATEGIA_MIN` | 15 | Strategy cycle interval (min) |
 
 ## Dependencies
 
 Managed via `venv/`. Key packages:
 - `python-binance` 1.0.25
 - `pandas` 2.3.2
+- `fastapi` + `uvicorn`
 - `python-dotenv` 0.21.1

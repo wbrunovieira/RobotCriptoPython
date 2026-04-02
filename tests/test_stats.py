@@ -1,7 +1,7 @@
 import pytest
 import json
 from datetime import date
-from stats import (
+from infra.stats_store import (
     iniciar_stats_do_dia,
     registrar_compra,
     registrar_venda,

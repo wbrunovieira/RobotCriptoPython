@@ -1,7 +1,7 @@
 import pytest
 import json
 import os
-from reserva import (
+from infra.reserva_store import (
     carregar_estado_reserva,
     registrar_lucro,
     calcular_conversao,

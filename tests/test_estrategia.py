@@ -1,12 +1,12 @@
 import pandas as pd
 import numpy as np
 import pytest
-from estrategia import (
-    calcular_rsi, verificar_stop_loss, calcular_quantidade, avaliar_sinal,
-    verificar_lucro_minimo, atualizar_trailing_stop, verificar_trailing_stop,
-    detectar_reversao_rsi, verificar_take_profit,
-    calcular_atr, stop_pct_por_atr, verificar_breakeven, calcular_adx,
+from core.indicadores import calcular_rsi, calcular_atr, calcular_adx
+from core.risco import (
+    verificar_stop_loss, verificar_lucro_minimo, atualizar_trailing_stop,
+    verificar_trailing_stop, verificar_take_profit, stop_pct_por_atr, verificar_breakeven,
 )
+from core.sinais import calcular_quantidade, avaliar_sinal, detectar_reversao_rsi
 
 
 def _make_dados(n=60, tendencia="alta"):
@@ -680,8 +680,7 @@ def test_sinal1_nao_bloqueado_em_mercado_tendencia_forte():
 
 def test_sinal1_bloqueado_por_adx_baixo(monkeypatch):
     """Se calcular_adx retornar < 20, Signal 1 é bloqueado mesmo com crossover válido."""
-    import estrategia
-    monkeypatch.setattr(estrategia, "calcular_adx", lambda dados, periodo=14: 15.0)
+    monkeypatch.setattr("core.sinais.calcular_adx", lambda dados, periodo=14: 15.0)
     dados = _make_dados_alta_forte(80)
     segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
     sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
@@ -690,8 +689,7 @@ def test_sinal1_bloqueado_por_adx_baixo(monkeypatch):
 
 def test_fim_de_semana_permite_entrada_com_volume_alto(monkeypatch):
     """Fim de semana não bloqueia mais — mas exige volume 1.5x acima da média."""
-    import estrategia
-    monkeypatch.setattr(estrategia, "calcular_adx", lambda dados, periodo=14: 30.0)
+    monkeypatch.setattr("core.sinais.calcular_adx", lambda dados, periodo=14: 30.0)
     dados = _make_dados_alta_forte(60)
     # Adiciona volume: último candle com 2x a média (passa o filtro de 1.5x)
     n = len(dados)
@@ -705,8 +703,7 @@ def test_fim_de_semana_permite_entrada_com_volume_alto(monkeypatch):
 
 def test_fim_de_semana_bloqueia_entrada_com_volume_baixo(monkeypatch):
     """Fim de semana com volume fraco (< 1.5x) deve bloquear entrada."""
-    import estrategia
-    monkeypatch.setattr(estrategia, "calcular_adx", lambda dados, periodo=14: 30.0)
+    monkeypatch.setattr("core.sinais.calcular_adx", lambda dados, periodo=14: 30.0)
     dados = _make_dados_alta_forte(60)
     # Volume flat: último candle igual à média → não passa 1.5x
     n = len(dados)
@@ -718,8 +715,7 @@ def test_fim_de_semana_bloqueia_entrada_com_volume_baixo(monkeypatch):
 
 def test_sinal2_nao_bloqueado_por_adx_baixo(monkeypatch):
     """Signal 2 (RSI reversal) não usa ADX — deve passar mesmo com ADX < 20."""
-    import estrategia
-    monkeypatch.setattr(estrategia, "calcular_adx", lambda dados, periodo=14: 10.0)
+    monkeypatch.setattr("core.sinais.calcular_adx", lambda dados, periodo=14: 10.0)
     precos = [500.0 - i * 4 for i in range(40)]
     precos += [precos[-1] + i * 6 for i in range(1, 4)]
     dados = pd.DataFrame({"fechamento": precos})

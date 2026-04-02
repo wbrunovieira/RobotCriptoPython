@@ -1,3 +1,4 @@
+"""Cálculos fiscais e exportação de relatórios mensais."""
 import csv
 import json
 import os
@@ -10,8 +11,7 @@ CSV_CAMPOS = ["data", "tipo", "par", "preco", "quantidade", "total_brl", "lucro_
 
 
 def carregar_stats_do_mes(ano_mes: str, diretorio: str = "stats") -> list:
-    """Carrega todos os arquivos de stats do mês informado (formato 'YYYY-MM').
-    Retorna lista de dicts ordenada por data."""
+    """Carrega todos os arquivos de stats do mês informado (formato 'YYYY-MM')."""
     padrao = os.path.join(diretorio, f"{ano_mes}-*.json")
     arquivos = sorted(glob(padrao))
     resultado = []
@@ -81,8 +81,7 @@ def verificar_alerta_volume(
 
 
 def exportar_csv_mensal(stats_list: list, arquivo: str = None, par: str = "SOLBRL") -> str:
-    """Exporta todas as operações do mês em CSV para declaração do IR.
-    Retorna o caminho do arquivo gerado."""
+    """Exporta todas as operações do mês em CSV para declaração do IR."""
     if arquivo is None:
         os.makedirs("relatorios", exist_ok=True)
         arquivo = "relatorios/relatorio_fiscal.csv"

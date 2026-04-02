@@ -1,7 +1,8 @@
 import json
 import os
 
-ARQUIVO_POSICAO = "posicao.json"
+ARQUIVO_POSICAO = "posicoes/posicao.json"
+
 
 def salvar_posicao(
     posicao: bool,
@@ -16,8 +17,10 @@ def salvar_posicao(
         "preco_maximo": preco_maximo,
         "stop_price": stop_price,
     }
+    os.makedirs(os.path.dirname(arquivo) or ".", exist_ok=True)
     with open(arquivo, "w") as f:
         json.dump(dados, f)
+
 
 def carregar_posicao(arquivo: str = ARQUIVO_POSICAO) -> dict:
     if not os.path.exists(arquivo):
