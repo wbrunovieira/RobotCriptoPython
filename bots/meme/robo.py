@@ -261,13 +261,25 @@ def obter_preco_atual(cliente, simbolo: str) -> float:
     return float(ticker["price"])
 
 
-def _obter_step_size(cliente, simbolo: str) -> str:
-    """Obtém o step_size do símbolo para arredondamento de quantidade."""
+def _obter_lot_size(cliente, simbolo: str) -> tuple[str, float]:
+    """Retorna (stepSize, minQty) do símbolo para validação de quantidade."""
     info = cliente.get_symbol_info(simbolo)
     for filtro in info["filters"]:
         if filtro["filterType"] == "LOT_SIZE":
-            return filtro["stepSize"]
-    return "0.01"
+            return filtro["stepSize"], float(filtro["minQty"])
+    return "0.01", 0.0
+
+
+def _formatar_quantidade(quantidade_raw: float, step_size: str) -> tuple[str, float]:
+    """Quantiza e formata a quantidade respeitando o stepSize da Binance.
+
+    Retorna (string para a API, float para logs).
+    Exemplo: step_size="1.00000000" → "505", step_size="0.01" → "505.60"
+    """
+    step = Decimal(step_size)
+    qty = Decimal(str(quantidade_raw)).quantize(step, rounding=ROUND_DOWN)
+    decimal_places = abs(step.as_tuple().exponent)
+    return format(qty, f".{decimal_places}f"), float(qty)
 
 
 # ─── Controle de estado ──────────────────────────────────────────────────────
@@ -368,7 +380,7 @@ def executar_compra(cliente, resultado_scanner: dict, saldo_usdt: float) -> bool
 
     try:
         preco_atual = obter_preco_atual(cliente, simbolo)
-        step_size = _obter_step_size(cliente, simbolo)
+        step_size, min_qty = _obter_lot_size(cliente, simbolo)
 
         valor_a_usar = saldo_usdt * PERCENTUAL_COMPRA
         if valor_a_usar <= 0:
@@ -376,12 +388,11 @@ def executar_compra(cliente, resultado_scanner: dict, saldo_usdt: float) -> bool
             return False
 
         quantidade_raw = valor_a_usar / preco_atual
-        quantidade_fmt = float(
-            Decimal(str(quantidade_raw)).quantize(Decimal(step_size), rounding=ROUND_DOWN)
-        )
+        quantidade_str, quantidade_fmt = _formatar_quantidade(quantidade_raw, step_size)
 
-        if quantidade_fmt <= 0:
-            logger.warning("[meme][compra] Quantidade calculada é zero. Abortando.")
+        if quantidade_fmt <= 0 or quantidade_fmt < min_qty:
+            logger.warning("[meme][compra] Quantidade %.8f abaixo do mínimo %.8f. Abortando.",
+                           quantidade_fmt, min_qty)
             return False
 
         client_order_id = f"{BOT_ID}-{simbolo}-{int(time.time() * 1000)}"
@@ -389,7 +400,7 @@ def executar_compra(cliente, resultado_scanner: dict, saldo_usdt: float) -> bool
             symbol=simbolo,
             side=SIDE_BUY,
             type=ORDER_TYPE_MARKET,
-            quantity=quantidade_fmt,
+            quantity=quantidade_str,
             newClientOrderId=client_order_id,
         )
 
@@ -464,13 +475,11 @@ def executar_venda(cliente, motivo: str = "Sinal de venda") -> bool:
     quantidade_original = estado.get("quantidade", 0.0)
 
     try:
-        step_size = _obter_step_size(cliente, simbolo)
+        step_size, min_qty = _obter_lot_size(cliente, simbolo)
         saldo_ativo = obter_saldo_ativo(cliente, ativo)
-        quantidade_fmt = float(
-            Decimal(str(saldo_ativo)).quantize(Decimal(step_size), rounding=ROUND_DOWN)
-        )
+        quantidade_str, quantidade_fmt = _formatar_quantidade(saldo_ativo, step_size)
 
-        if quantidade_fmt <= 0:
+        if quantidade_fmt <= 0 or quantidade_fmt < min_qty:
             logger.warning("[meme][venda] Saldo de %s insuficiente (%.8f).", ativo, saldo_ativo)
             return False
 
@@ -480,7 +489,7 @@ def executar_venda(cliente, motivo: str = "Sinal de venda") -> bool:
             symbol=simbolo,
             side=SIDE_SELL,
             type=ORDER_TYPE_MARKET,
-            quantity=quantidade_fmt,
+            quantity=quantidade_str,
             newClientOrderId=client_order_id,
         )
 
