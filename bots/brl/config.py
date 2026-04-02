@@ -10,6 +10,7 @@ MAX_POSICOES = int(os.getenv("BOT_MAX_POSICOES", "3"))
 PERCENTUAL_COMPRA = 0.90
 STOP_PORTFOLIO_PCT = float(os.getenv("BOT_STOP_PORTFOLIO_PCT", "0.05"))
 BLOQUEIO_PORTFOLIO_FILE = "run/bloqueio_portfolio.json"
+BLOQUEIO_QUINTA_FEIRA = os.getenv("BOT_BLOQUEIO_QUINTA_FEIRA", "true").lower() == "true"
 MAX_TENTATIVAS = 3
 INTERVALO_MONITORAMENTO = int(os.getenv("BOT_INTERVALO_MONITORAMENTO", "60"))
 _intervalo_estrategia_min = int(os.getenv("BOT_INTERVALO_ESTRATEGIA_MIN", "15"))

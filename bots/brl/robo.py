@@ -47,7 +47,7 @@ from bots.brl.config import (
     BOT_ID, PERIODO_CANDLE, STOP_PCT, TAKE_PROFIT_PCT, TETO_SALDO_PCT,
     MAX_POSICOES, PERCENTUAL_COMPRA, STOP_PORTFOLIO_PCT, BLOQUEIO_PORTFOLIO_FILE,
     MAX_TENTATIVAS, INTERVALO_MONITORAMENTO, INTERVALO_ESTRATEGIA,
-    _intervalo_estrategia_min,
+    _intervalo_estrategia_min, BLOQUEIO_QUINTA_FEIRA,
 )
 
 load_dotenv()
@@ -479,7 +479,7 @@ def monitorar_stop_par(cliente, par):
                 return
             dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
             if not dados.empty:
-                sinal = avaliar_sinal(dados, posicao=False, reentrada=True)
+                sinal = avaliar_sinal(dados, posicao=False, reentrada=True, bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA)
                 if sinal == "COMPRAR":
                     stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
                     saldo_reentrada = min(
@@ -529,7 +529,7 @@ def monitorar_stop_par(cliente, par):
                 return
             dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
             if not dados.empty:
-                sinal = avaliar_sinal(dados, posicao=False, reentrada=True)
+                sinal = avaliar_sinal(dados, posicao=False, reentrada=True, bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA)
                 if sinal == "COMPRAR":
                     stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
                     saldo_reentrada = min(
@@ -589,7 +589,8 @@ def ciclo_par(cliente, par, saldo_brl, saldo_ativo):
     logger.info("[%s] Preco: R$%.2f", simbolo, preco_atual)
 
     pares_abertos = contar_posicoes_abertas(listar_pares())
-    sinal = avaliar_sinal(dados, posicao, pares_abertos=pares_abertos, max_posicoes=MAX_POSICOES)
+    sinal = avaliar_sinal(dados, posicao, pares_abertos=pares_abertos, max_posicoes=MAX_POSICOES,
+                          bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA)
 
     if sinal == "COMPRAR":
         if _portfolio_bloqueado():

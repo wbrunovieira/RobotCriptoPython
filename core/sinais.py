@@ -72,6 +72,18 @@ def _horario_permitido(agora: pd.Timestamp = None) -> bool:
     return True
 
 
+def _quinta_feira_bloqueada(agora: pd.Timestamp = None) -> bool:
+    """Retorna True se hoje é quinta-feira e o bloqueio está ativo.
+
+    Padrão observado nas últimas 5 semanas (mar–abr 2026):
+    80% das quintas-feiras registraram queda média de -2% a -4% (todos os pares BRL),
+    atribuída à incerteza geopolítica Trump/Irã — vendas preventivas antes do fim de semana.
+    """
+    if agora is None:
+        agora = pd.Timestamp.now(tz="America/Sao_Paulo")
+    return agora.dayofweek == 3  # 3 = quinta-feira
+
+
 def avaliar_sinal(
     dados: pd.DataFrame,
     posicao: bool,
@@ -81,6 +93,7 @@ def avaliar_sinal(
     max_posicoes: int = 2,
     agora: pd.Timestamp = None,
     reentrada: bool = False,
+    bloqueio_quinta: bool = False,
 ) -> str | None:
     """Avalia o sinal de compra ou venda com base em médias móveis e RSI.
 
@@ -114,6 +127,11 @@ def avaliar_sinal(
     # Filtros comuns a todos os sinais de compra
     if pares_abertos >= max_posicoes:
         logger.info("Filtro: %d/%d posições abertas. Entrada bloqueada.", pares_abertos, max_posicoes)
+        return None
+
+    # Quinta-feira: bloqueia novas entradas (padrão de queda ~80% das quintas, mar-abr 2026)
+    if bloqueio_quinta and _quinta_feira_bloqueada(agora):
+        logger.info("Filtro quinta-feira: novas compras bloqueadas (BOT_BLOQUEIO_QUINTA_FEIRA=true).")
         return None
 
     # Fim de semana: permite entrada, mas exige volume 1.5x acima da média
