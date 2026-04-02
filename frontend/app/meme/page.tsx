@@ -89,7 +89,7 @@ export default function MemePage() {
             Posição Atual
           </h2>
           {memeStatus ? (
-            <MemePosicaoCard posicao={memeStatus.posicao} precoAtual={precoAtual} />
+            <MemePosicaoCard posicao={memeStatus.posicao ?? { posicao: false }} precoAtual={precoAtual} />
           ) : (
             <div className="rounded-xl bg-gray-800 animate-pulse h-24" />
           )}

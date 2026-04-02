@@ -187,7 +187,7 @@ export default function PainelControleMeme() {
               <div>
                 <p className="text-xs text-gray-400">Saldo USDT</p>
                 <p className="text-lg font-bold font-mono text-blue-400">
-                  {status ? `${status.saldo_usdt.toFixed(4)} USDT` : '—'}
+                  {status ? `${(status.saldo_usdt ?? 0).toFixed(4)} USDT` : '—'}
                 </p>
               </div>
               <div>

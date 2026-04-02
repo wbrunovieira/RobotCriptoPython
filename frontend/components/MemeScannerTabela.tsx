@@ -24,7 +24,7 @@ function volRatioColor(ratio: number): string {
 }
 
 export default function MemeScannerTabela({ scores }: Props) {
-  const sorted = [...scores].sort((a, b) => b.score - a.score);
+  const sorted = [...(scores ?? [])].sort((a, b) => b.score - a.score);
 
   if (sorted.length === 0) {
     return (

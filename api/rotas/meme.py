@@ -111,20 +111,51 @@ def _arquivo_stats_meme(data: str) -> str:
 
 # ─── Endpoints ───────────────────────────────────────────────────────────────
 
+def _saldo_usdt() -> float:
+    """Lê saldo USDT disponível na Binance."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(_ROOT, ".env"))
+        from binance import Client as BinanceClient
+        api_key = os.getenv("KEY_BINANCE", "")
+        api_secret = os.getenv("SECRET_BINANCE", "")
+        if not api_key or not api_secret:
+            return 0.0
+        cliente = BinanceClient(api_key, api_secret)
+        conta = cliente.get_account()
+        for item in conta["balances"]:
+            if item["asset"] == "USDT":
+                return float(item["free"])
+    except Exception:
+        pass
+    return 0.0
+
+
 @router.get("/status", dependencies=[Depends(_verificar_token)])
 def get_status():
-    if not os.path.exists(_MEME_STATUS_FILE):
-        return {"rodando": False, "ultimo_ciclo": None, "versao": None, "bot": "meme"}
-    with open(_MEME_STATUS_FILE) as f:
-        dados = json.load(f)
+    posicao_padrao = {"posicao": False, "simbolo": None, "preco_entrada": None, "preco_maximo": None, "stop_price": None}
 
-    # Enriquecer com info de posição e saldo
-    posicao = None
+    posicao = posicao_padrao.copy()
     if os.path.exists(_MEME_POSICAO_FILE):
-        with open(_MEME_POSICAO_FILE) as f:
-            posicao = json.load(f)
+        try:
+            with open(_MEME_POSICAO_FILE) as f:
+                posicao = json.load(f)
+        except Exception:
+            pass
+
+    saldo_usdt = _saldo_usdt()
+
+    if not os.path.exists(_MEME_STATUS_FILE):
+        return {"rodando": False, "ultimo_ciclo": None, "versao": None, "bot": "meme", "posicao": posicao, "saldo_usdt": saldo_usdt}
+
+    try:
+        with open(_MEME_STATUS_FILE) as f:
+            dados = json.load(f)
+    except Exception:
+        return {"rodando": False, "ultimo_ciclo": None, "versao": None, "bot": "meme", "posicao": posicao, "saldo_usdt": saldo_usdt}
 
     dados["posicao"] = posicao
+    dados["saldo_usdt"] = saldo_usdt
     return dados
 
 

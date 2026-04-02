@@ -315,7 +315,8 @@ export interface MemeAporte {
 }
 
 export const fetchMemeStatus = () => apiFetch<MemeStatus>("/meme/status");
-export const fetchMemeScanner = () => apiFetch<MemeScore[]>("/meme/scanner");
+export const fetchMemeScanner = () =>
+  apiFetch<{ total: number; resultados: MemeScore[] }>("/meme/scanner").then(r => r.resultados);
 export const fetchMemeOperacoes = () => apiFetch<Operacao[]>("/meme/operacoes");
 export const fetchMemeStatsDia = () => apiFetch<ResumoStats>("/meme/stats/dia");
 export const fetchMemeAportes = () => apiFetch<MemeAporte[]>("/meme/aportes");
@@ -330,5 +331,7 @@ export const iniciarMemeBot = () =>
   apiFetch<{ ok: boolean }>("/meme/bot/iniciar", { method: "POST" });
 export const pararMemeBot = () =>
   apiFetch<{ ok: boolean }>("/meme/bot/parar", { method: "POST" });
-export const memeBotLogsStreamUrl = (linhas = 200) =>
-  `${process.env.NEXT_PUBLIC_API_URL ?? ""}/meme/bot/logs?linhas=${linhas}&token=${typeof window !== "undefined" ? localStorage.getItem("api_token") ?? "" : ""}`;
+export function memeBotLogsStreamUrl(historico = 200): string {
+  const token = getToken();
+  return `${API_URL}/meme/bot/logs/stream?token=${encodeURIComponent(token)}&historico=${historico}`;
+}

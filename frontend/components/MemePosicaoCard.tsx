@@ -7,7 +7,7 @@ interface Props {
 }
 
 export default function MemePosicaoCard({ posicao, precoAtual }: Props) {
-  if (!posicao.posicao) {
+  if (!posicao?.posicao) {
     return (
       <div className="bg-gray-900 rounded-xl p-4">
         <p className="text-sm text-gray-500">Sem posição aberta</p>
