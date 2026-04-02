@@ -305,7 +305,7 @@ export default function GraficoEvolucao() {
 
       {/* Cards resumo */}
       {data && ultimo && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="bg-gray-800 rounded-lg px-3 py-2">
             <p className="text-xs text-gray-500 mb-1">Total investido</p>
             <p className="text-base font-bold font-mono text-gray-200">
@@ -319,13 +319,30 @@ export default function GraficoEvolucao() {
             </p>
           </div>
           <div className="bg-gray-800 rounded-lg px-3 py-2">
-            <p className="text-xs text-gray-500 mb-1">Lucro de trades</p>
-            <p className={`text-base font-bold font-mono ${positivo ? "text-green-400" : "text-red-400"}`}>
-              {positivo ? "+" : ""}R$ {fmt(ultimo.variacao_brl)}
-              <span className="text-xs ml-1 font-normal">
-                ({positivo ? "+" : ""}{ultimo.variacao_pct.toFixed(2)}%)
-              </span>
-            </p>
+            <p className="text-xs text-gray-500 mb-1">Lucro realizado</p>
+            {(() => {
+              const lr = data.lucro_realizado_brl ?? 0;
+              const lrPos = lr >= 0;
+              return (
+                <p className={`text-base font-bold font-mono ${lrPos ? "text-green-400" : "text-red-400"}`}>
+                  {lrPos ? "+" : ""}R$ {fmt(lr)}
+                </p>
+              );
+            })()}
+            <p className="text-xs text-gray-600 mt-0.5">trades fechados</p>
+          </div>
+          <div className="bg-gray-800 rounded-lg px-3 py-2">
+            <p className="text-xs text-gray-500 mb-1">P&L aberto</p>
+            {(() => {
+              const pa = data.pnl_aberto_brl ?? 0;
+              const paPos = pa >= 0;
+              return (
+                <p className={`text-base font-bold font-mono ${pa === 0 ? "text-gray-500" : paPos ? "text-green-400" : "text-red-400"}`}>
+                  {pa === 0 ? "—" : `${paPos ? "+" : ""}R$ ${fmt(pa)}`}
+                </p>
+              );
+            })()}
+            <p className="text-xs text-gray-600 mt-0.5">posições abertas</p>
           </div>
         </div>
       )}

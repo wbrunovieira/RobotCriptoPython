@@ -23,7 +23,11 @@ from estrategia import (
 )
 from notificacao import enviar_whatsapp
 from stats import iniciar_stats_do_dia, registrar_compra, registrar_venda, calcular_resumo, carregar_stats_do_dia
-from reserva import registrar_lucro, calcular_conversao, registrar_conversao
+from reserva import (
+    registrar_lucro, calcular_conversao, registrar_conversao,
+    registrar_resultado, deve_converter, calcular_split,
+    registrar_reinvestimento, registrar_conversao_completa,
+)
 from pares import listar_pares, arquivo_posicao, calcular_saldo_disponivel, consolidar_resumo
 
 load_dotenv()
@@ -384,27 +388,55 @@ def executar_venda(cliente, par, saldo_ativo, preco_atual, motivo="Sinal de vend
     print(msg)
     enviar_whatsapp(msg)
 
-    _verificar_reserva_usdc(cliente, lucro_op, timestamp)
+    # Calcula portfolio atual (BRL após venda) e capital investido (total aportes)
+    saldo_brl_pos_venda, _ = obter_saldos(cliente)
+    capital_investido = _saldo_para_bot(saldo_brl_pos_venda, {})
+    _verificar_reserva_usdc(cliente, lucro_op, timestamp, saldo_brl_pos_venda, capital_investido)
     return False
 
 
-def _verificar_reserva_usdc(cliente, lucro_op: float, timestamp: str):
+def _verificar_reserva_usdc(
+    cliente,
+    lucro_op: float,
+    timestamp: str,
+    portfolio_brl: float,
+    capital_investido: float,
+):
     try:
-        estado = registrar_lucro(lucro_op)
-        valor_conversao = calcular_conversao(estado["lucro_acumulado_brl"])
-        if valor_conversao == 0.0:
-            print(f"[reserva] Lucro acumulado: R${estado['lucro_acumulado_brl']:.2f} (aguardando R$30)")
+        estado = registrar_resultado(lucro_op)
+        pnl = estado["pnl_liquido_pendente_brl"]
+
+        if not deve_converter(pnl, portfolio_brl, capital_investido):
+            status = "aguardando portfólio subir" if portfolio_brl <= capital_investido else f"aguardando R${30 - pnl:.2f} mais"
+            print(f"[reserva] P&L líquido: R${pnl:.2f} ({status})")
             return
+
+        split = calcular_split(pnl)
+        valor_usdc_brl = split["usdc_brl"]
+        valor_reinvest_brl = split["reinvest_brl"]
+
+        # 50% → compra USDC
         ticker = cliente.get_symbol_ticker(symbol="USDCBRL")
         taxa_cambio = float(ticker["price"])
-        quantidade_usdc = round(valor_conversao / taxa_cambio, 4)
-        cliente.create_order(symbol="USDCBRL", side="BUY", type="MARKET", quoteOrderQty=valor_conversao)
-        estado_novo = registrar_conversao(valor_conversao, quantidade_usdc, taxa_cambio, timestamp)
+        quantidade_usdc = round(valor_usdc_brl / taxa_cambio, 4)
+        cliente.create_order(symbol="USDCBRL", side="BUY", type="MARKET", quoteOrderQty=valor_usdc_brl)
+
+        # 50% → novo aporte automático
+        data_str = timestamp[:10]
+        registrar_reinvestimento(valor_reinvest_brl, data_str)
+
+        # Grava estado completo
+        estado_novo = registrar_conversao_completa(
+            valor_usdc_brl, valor_reinvest_brl, quantidade_usdc, taxa_cambio, timestamp
+        )
+
         msg = (
-            f"RESERVA USDC\n"
-            f"Convertido: R${valor_conversao:.2f} → {quantidade_usdc:.4f} USDC\n"
-            f"Taxa: R${taxa_cambio:.4f}/USDC\n"
-            f"Reserva total: {estado_novo['reserva_usdc']:.4f} USDC"
+            f"LUCRO PROCESSADO\n"
+            f"P&L líquido: R${pnl:.2f}\n"
+            f"→ USDC: R${valor_usdc_brl:.2f} = {quantidade_usdc:.4f} USDC\n"
+            f"→ Capital: +R${valor_reinvest_brl:.2f} (reinvestido)\n"
+            f"Reserva total: {estado_novo['reserva_usdc']:.4f} USDC\n"
+            f"Capital total reinvestido: R${estado_novo['capital_reinvestido_brl']:.2f}"
         )
         print(msg)
         enviar_whatsapp(msg)

@@ -85,18 +85,43 @@ export default function Dashboard() {
         {saldos && <SaldoTotal saldos={saldos} />}
 
         {reserva && (
-          <section className="bg-gray-900 rounded-xl p-4 flex gap-8">
+          <section className="bg-gray-900 rounded-xl p-4 grid grid-cols-2 gap-6 sm:grid-cols-4">
             <div>
               <p className="text-xs text-gray-400">Reserva USDC</p>
-              <p className="text-2xl font-bold font-mono text-blue-400">
+              <p className="text-xl font-bold font-mono text-blue-400">
                 {reserva.reserva_usdc.toFixed(4)} USDC
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-400">Lucro acumulado (aguardando R$30)</p>
-              <p className="text-2xl font-bold font-mono text-yellow-400">
-                R$ {reserva.lucro_acumulado_brl.toFixed(2)}
+              <p className="text-xs text-gray-400">Capital reinvestido</p>
+              <p className="text-xl font-bold font-mono text-green-400">
+                R$ {(reserva.capital_reinvestido_brl ?? 0).toFixed(2)}
               </p>
+              <p className="text-xs text-gray-600">adicionado ao capital via lucros</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">P&L líquido pendente</p>
+              {(() => {
+                const pnl = reserva.pnl_liquido_pendente_brl ?? 0;
+                const pos = pnl >= 0;
+                return (
+                  <>
+                    <p className={`text-xl font-bold font-mono ${pnl === 0 ? "text-gray-500" : pos ? "text-yellow-400" : "text-red-400"}`}>
+                      {pnl >= 0 ? "+" : ""}R$ {pnl.toFixed(2)}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {pnl < 30 && pnl >= 0 ? `faltam R$ ${(30 - pnl).toFixed(2)} para converter` : pnl >= 30 ? "aguardando portfólio subir" : "acumulando"}
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
+            <div>
+              <p className="text-xs text-gray-400">Histórico conversões</p>
+              <p className="text-xl font-bold font-mono text-gray-300">
+                {reserva.historico_conversoes.length}x
+              </p>
+              <p className="text-xs text-gray-600">operações realizadas</p>
             </div>
           </section>
         )}

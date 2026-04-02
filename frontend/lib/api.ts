@@ -60,9 +60,13 @@ export interface Operacao {
 
 export interface Reserva {
   lucro_acumulado_brl: number;
+  pnl_liquido_pendente_brl: number;
   reserva_usdc: number;
+  capital_reinvestido_brl: number;
   historico_conversoes: Array<{
-    valor_brl: number;
+    valor_usdc_brl?: number;
+    valor_reinvest_brl?: number;
+    valor_brl?: number;
     valor_usdc: number;
     taxa_cambio: number;
     timestamp: string;
@@ -196,6 +200,8 @@ export interface PontoPortfolio {
 export interface EvolucaoPortfolio {
   capital_inicial: number;
   total_investido: number;
+  lucro_realizado_brl: number;
+  pnl_aberto_brl: number;
   pontos: PontoPortfolio[];
 }
 

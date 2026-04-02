@@ -737,6 +737,7 @@ def get_portfolio_evolucao():
 
     # Ponto atual com preços de mercado (sobrescreve o último se for hoje)
     hoje = date.today().strftime("%Y-%m-%d")
+    saldo_brl_atual = 0.0
     try:
         api_key = os.getenv("KEY_BINANCE", "")
         api_secret = os.getenv("SECRET_BINANCE", "")
@@ -810,7 +811,38 @@ def get_portfolio_evolucao():
         p["variacao_brl"] = round(p["valor_brl"] - base, 2)
         p["variacao_pct"] = round((p["valor_brl"] / base - 1) * 100, 2) if base else 0.0
 
-    return {"capital_inicial": round(total_investido_final, 2), "total_investido": round(total_investido_final, 2), "pontos": pontos}
+    # Lucro realizado: soma de lucro_brl de todas as VENDAs nos stats (trades fechados)
+    lucro_realizado_brl = 0.0
+    for filename in arquivos:
+        with open(os.path.join(stats_dir, filename)) as f:
+            stats_item = json.load(f)
+        for op in stats_item.get("operacoes", []):
+            if op["tipo"] == "VENDA":
+                lucro_realizado_brl += float(op.get("lucro_brl", 0.0))
+    lucro_realizado_brl = round(lucro_realizado_brl, 2)
+
+    # P&L não-realizado: posições abertas vs custo de entrada
+    pnl_aberto_brl = 0.0
+    if pontos:
+        ultimo_ponto = pontos[-1]
+        if ultimo_ponto.get("a_mercado"):
+            # valor_mercado já calculado acima inclui posições a mercado
+            # pnl_aberto = valor_mercado - (BRL disponível + custo das posições abertas)
+            custo_posicoes_abertas = sum(p["custo_total"] for p in posicoes.values())
+            try:
+                pnl_aberto_brl = round(
+                    ultimo_ponto["valor_brl"] - (saldo_brl_atual + custo_posicoes_abertas), 2
+                )
+            except Exception:
+                pnl_aberto_brl = 0.0
+
+    return {
+        "capital_inicial": round(total_investido_final, 2),
+        "total_investido": round(total_investido_final, 2),
+        "lucro_realizado_brl": lucro_realizado_brl,
+        "pnl_aberto_brl": pnl_aberto_brl,
+        "pontos": pontos,
+    }
 
 
 @app.get("/bot/logs/stream")
