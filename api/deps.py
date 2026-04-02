@@ -1,6 +1,7 @@
 """Dependências e utilidades compartilhadas entre os routers da API."""
 import json
 import os
+import tempfile
 from datetime import date
 
 from binance import Client as BinanceClient
@@ -67,10 +68,18 @@ def _carregar_dados_aportes() -> dict:
 
 
 def _salvar_dados_aportes(dados: dict) -> None:
-    os.makedirs(_stats_dir(), exist_ok=True)
+    dir_ = _stats_dir()
+    os.makedirs(dir_, exist_ok=True)
     dados["confirmados"] = sorted(dados["confirmados"], key=lambda x: x["data"])
-    with open(_aportes_file(), "w") as fp:
-        json.dump(dados, fp, indent=2)
+    arquivo = _aportes_file()
+    fd, tmp = tempfile.mkstemp(dir=dir_, prefix=".tmp_")
+    try:
+        with os.fdopen(fd, "w") as fp:
+            json.dump(dados, fp, indent=2)
+        os.replace(tmp, arquivo)
+    except Exception:
+        os.unlink(tmp)
+        raise
 
 
 def _carregar_aportes() -> list:

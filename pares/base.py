@@ -1,4 +1,5 @@
 """Utilitários de universo de pares — agnósticos de moeda base."""
+from infra.persistencia import carregar_posicao
 
 TETO_PCT_PADRAO = 0.60
 
@@ -19,6 +20,14 @@ def pares_sem_posicao(estados: dict) -> list:
     estados = {"SOLBRL": {"posicao": True}, "BTCBRL": {"posicao": False}, ...}
     """
     return [simbolo for simbolo, estado in estados.items() if not estado.get("posicao")]
+
+
+def contar_posicoes_abertas(pares: list) -> int:
+    """Conta quantos pares estão com posição aberta no momento."""
+    return sum(
+        1 for par in pares
+        if carregar_posicao(arquivo=arquivo_posicao(par["simbolo"])).get("posicao")
+    )
 
 
 def consolidar_resumo(resumos: list) -> dict:

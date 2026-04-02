@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 
 ARQUIVO_RESERVA = "reserva/estado.json"
 ARQUIVO_APORTES = "stats/aportes.json"
@@ -18,9 +19,16 @@ def estado_inicial() -> dict:
 
 
 def _salvar(estado: dict, arquivo: str):
-    os.makedirs(os.path.dirname(arquivo) or ".", exist_ok=True)
-    with open(arquivo, "w", encoding="utf-8") as f:
-        json.dump(estado, f, ensure_ascii=False, indent=2)
+    dir_ = os.path.dirname(arquivo) or "."
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, prefix=".tmp_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(estado, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, arquivo)
+    except Exception:
+        os.unlink(tmp)
+        raise
 
 
 def carregar_estado_reserva(arquivo: str = ARQUIVO_RESERVA) -> dict:
@@ -123,9 +131,7 @@ def registrar_reinvestimento(
         "fonte": "lucro_reinvestido",
     })
 
-    os.makedirs(os.path.dirname(arquivo_aportes) or ".", exist_ok=True)
-    with open(arquivo_aportes, "w", encoding="utf-8") as f:
-        json.dump(dados, f, ensure_ascii=False, indent=2)
+    _salvar(dados, arquivo_aportes)
 
 
 def registrar_conversao_completa(

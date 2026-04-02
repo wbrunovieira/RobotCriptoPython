@@ -6,6 +6,7 @@ from pares.base import (
     arquivo_posicao,
     calcular_saldo_disponivel,
     pares_sem_posicao,
+    contar_posicoes_abertas,
     consolidar_resumo,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "arquivo_posicao",
     "calcular_saldo_disponivel",
     "pares_sem_posicao",
+    "contar_posicoes_abertas",
     "consolidar_resumo",
 ]

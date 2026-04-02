@@ -2,11 +2,23 @@
 
 Avaliação de mercado e decisões de trading — sem I/O, sem Binance.
 """
+import logging
+
 import pandas as pd
 from core.indicadores import calcular_rsi, calcular_adx
 
-_MIN_CROSSOVER_SEPARATION_PCT = 0.5   # % mínimo de separação MA9/MA21
-_MA50_SLOPE_MAX_QUEDA_PCT     = -0.2  # % queda da MA50 em 3 candles para bloquear
+logger = logging.getLogger(__name__)
+
+# Parâmetros do Sinal 1 (MA crossover)
+_MIN_CROSSOVER_SEPARATION_PCT = 0.5   # % mínimo de separação MA9/MA21 para compra
+_REENTRADA_SEP_MIN_PCT        = 0.2   # % mínimo de separação em modo reentrada
+_VENDA_SEP_MIN_PCT            = 0.3   # % mínimo de separação para confirmar sinal de venda
+_MA50_SLOPE_MAX_QUEDA_PCT     = -0.2  # % queda da MA50 em 3 candles para bloquear entrada
+_ADX_TENDENCIA_MIN            = 20    # ADX mínimo para confirmar tendência
+
+# Parâmetros de volume
+_VOL_MULTIPLICADOR_NORMAL     = 1.0   # filtro de volume em dias úteis
+_VOL_MULTIPLICADOR_FDS        = 1.5   # filtro de volume em fim de semana
 
 
 def detectar_reversao_rsi(
@@ -60,18 +72,6 @@ def _horario_permitido(agora: pd.Timestamp = None) -> bool:
     return True
 
 
-def contar_posicoes_abertas(pares: list) -> int:
-    """Conta quantos pares estão com posição aberta no momento."""
-    from infra.persistencia import carregar_posicao
-    from pares import arquivo_posicao
-    abertas = 0
-    for par in pares:
-        estado = carregar_posicao(arquivo=arquivo_posicao(par["simbolo"]))
-        if estado.get("posicao"):
-            abertas += 1
-    return abertas
-
-
 def avaliar_sinal(
     dados: pd.DataFrame,
     posicao: bool,
@@ -98,27 +98,29 @@ def avaliar_sinal(
     media_devagar = fechamento.rolling(window=21).mean().iloc[-1]
     rsi = calcular_rsi(fechamento, periodo=14)
 
-    print(f"Média Rápida (9): {media_rapida:.4f} | Média Devagar (21): {media_devagar:.4f} | RSI: {rsi:.2f}")
+    logger.debug("Média Rápida (9): %.4f | Média Devagar (21): %.4f | RSI: %.2f",
+                 media_rapida, media_devagar, rsi)
 
     if posicao:
         if media_rapida < media_devagar:
             separacao_venda_pct = (media_devagar - media_rapida) / media_devagar * 100
-            if separacao_venda_pct < 0.3:
-                print(f"Filtro de saída: crossover fraco ({separacao_venda_pct:.2f}% < 0.3%). Aguardando trailing stop.")
+            if separacao_venda_pct < _VENDA_SEP_MIN_PCT:
+                logger.info("Filtro de saída: crossover fraco (%.2f%% < %.1f%%). Aguardando trailing stop.",
+                            separacao_venda_pct, _VENDA_SEP_MIN_PCT)
                 return None
             return "VENDER"
         return None
 
     # Filtros comuns a todos os sinais de compra
     if pares_abertos >= max_posicoes:
-        print(f"Filtro: {pares_abertos}/{max_posicoes} posições abertas. Entrada bloqueada.")
+        logger.info("Filtro: %d/%d posições abertas. Entrada bloqueada.", pares_abertos, max_posicoes)
         return None
 
     # Fim de semana: permite entrada, mas exige volume 1.5x acima da média
     fim_de_semana = not _horario_permitido(agora)
-    vol_multiplicador = 1.5 if fim_de_semana else 1.0
+    vol_multiplicador = _VOL_MULTIPLICADOR_FDS if fim_de_semana else _VOL_MULTIPLICADOR_NORMAL
     if fim_de_semana:
-        print("Aviso: fim de semana — volume mínimo elevado para 1.5x da média.")
+        logger.warning("Fim de semana — volume mínimo elevado para %.1fx da média.", _VOL_MULTIPLICADOR_FDS)
 
     # --- Sinal 1: Crossover MA9 > MA21 (trend-following) ---
     if media_rapida > media_devagar and 50 < rsi < rsi_sobrecomprado:
@@ -127,35 +129,39 @@ def avaliar_sinal(
             ma50 = ma50_series.iloc[-1]
             preco_atual_val = float(fechamento.iloc[-1])
             if preco_atual_val < ma50:
-                print(f"Filtro de regime: preço ({preco_atual_val:.2f}) abaixo da MA50 ({ma50:.2f}). Entrada bloqueada.")
+                logger.info("Filtro de regime: preço (%.2f) abaixo da MA50 (%.2f). Entrada bloqueada.",
+                            preco_atual_val, ma50)
                 return None
             if not reentrada and len(fechamento) >= 53:
                 ma50_3h_atras = ma50_series.iloc[-4]
                 slope_pct = (ma50 - ma50_3h_atras) / ma50_3h_atras * 100
                 if slope_pct < _MA50_SLOPE_MAX_QUEDA_PCT:
-                    print(f"Filtro: MA50 caindo ({slope_pct:.2f}%). Entrada bloqueada.")
+                    logger.info("Filtro: MA50 caindo (%.2f%%). Entrada bloqueada.", slope_pct)
                     return None
-        limiar_separacao = 0.2 if reentrada else _MIN_CROSSOVER_SEPARATION_PCT
+        limiar_separacao = _REENTRADA_SEP_MIN_PCT if reentrada else _MIN_CROSSOVER_SEPARATION_PCT
         separacao_pct = (media_rapida - media_devagar) / media_devagar * 100
         if separacao_pct < limiar_separacao:
-            print(f"Filtro: crossover fraco ({separacao_pct:.2f}% < {limiar_separacao}%). Entrada bloqueada.")
+            logger.info("Filtro: crossover fraco (%.2f%% < %.1f%%). Entrada bloqueada.",
+                        separacao_pct, limiar_separacao)
             return None
         if not _volume_acima_media(dados, multiplicador=vol_multiplicador):
-            print(f"Filtro: volume abaixo de {vol_multiplicador}x da média. Entrada bloqueada.")
+            logger.info("Filtro: volume abaixo de %.1fx da média. Entrada bloqueada.", vol_multiplicador)
             return None
         adx = calcular_adx(dados)
-        if adx < 20:
-            print(f"Filtro: mercado lateral (ADX={adx:.1f} < 20). Entrada Signal 1 bloqueada.")
+        if adx < _ADX_TENDENCIA_MIN:
+            logger.info("Filtro: mercado lateral (ADX=%.1f < %d). Entrada Signal 1 bloqueada.",
+                        adx, _ADX_TENDENCIA_MIN)
             return None
-        print(f"ADX={adx:.1f} — tendência confirmada.")
+        logger.info("ADX=%.1f — tendência confirmada.", adx)
         return "COMPRAR"
 
     # --- Sinal 2: Reversão RSI sobrevendido (counter-trend) ---
     if detectar_reversao_rsi(fechamento, periodo=14, limite_sobrevendido=rsi_sobrevendido):
         if not _volume_acima_media(dados, multiplicador=vol_multiplicador):
-            print(f"Filtro: volume abaixo de {vol_multiplicador}x da média (reversão RSI). Entrada bloqueada.")
+            logger.info("Filtro: volume abaixo de %.1fx da média (reversão RSI). Entrada bloqueada.",
+                        vol_multiplicador)
             return None
-        print("Sinal de reversao RSI detectado (RSI subindo de sobrevendido)")
+        logger.info("Sinal de reversão RSI detectado (RSI subindo de sobrevendido).")
         return "COMPRAR"
 
     return None

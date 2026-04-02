@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from datetime import date
 
 
@@ -10,9 +11,16 @@ def _caminho_padrao():
 
 
 def _salvar(dados: dict, arquivo: str):
-    os.makedirs(os.path.dirname(arquivo) or ".", exist_ok=True)
-    with open(arquivo, "w") as f:
-        json.dump(dados, f, ensure_ascii=False, indent=2)
+    dir_ = os.path.dirname(arquivo) or "."
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, prefix=".tmp_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, arquivo)
+    except Exception:
+        os.unlink(tmp)
+        raise
 
 
 def _carregar(arquivo: str) -> dict:
