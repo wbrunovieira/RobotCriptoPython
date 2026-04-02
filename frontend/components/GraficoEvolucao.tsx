@@ -305,7 +305,7 @@ export default function GraficoEvolucao() {
 
       {/* Cards resumo */}
       {data && ultimo && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <div className="bg-gray-800 rounded-lg px-3 py-2">
             <p className="text-xs text-gray-500 mb-1">Total investido</p>
             <p className="text-base font-bold font-mono text-gray-200">
@@ -344,6 +344,23 @@ export default function GraficoEvolucao() {
             })()}
             <p className="text-xs text-gray-600 mt-0.5">posições abertas</p>
           </div>
+          {(() => {
+            const total = (data.lucro_realizado_brl ?? 0) + (data.pnl_aberto_brl ?? 0);
+            const investido = data.total_investido ?? data.capital_inicial;
+            const pct = investido > 0 ? (total / investido) * 100 : 0;
+            const pos = total >= 0;
+            return (
+              <div className={`rounded-lg px-3 py-2 ${pos ? "bg-green-950 border border-green-800" : "bg-red-950 border border-red-800"}`}>
+                <p className="text-xs text-gray-400 mb-1">Resultado total</p>
+                <p className={`text-base font-bold font-mono ${pos ? "text-green-400" : "text-red-400"}`}>
+                  {pos ? "+" : ""}R$ {fmt(Math.abs(total))}
+                </p>
+                <p className={`text-xs font-mono font-semibold ${pos ? "text-green-500" : "text-red-500"}`}>
+                  {pos ? "+" : ""}{pct.toFixed(2)}%
+                </p>
+              </div>
+            );
+          })()}
         </div>
       )}
 
