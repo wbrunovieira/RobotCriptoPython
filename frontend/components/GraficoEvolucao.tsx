@@ -1,11 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { createChart, ColorType, AreaSeries, LineSeries } from "lightweight-charts";
-import {
-  EvolucaoPortfolio, PontoPortfolio, fetchEvolucaoPortfolio,
-  Aporte, fetchAportes, registrarAporte, deletarAporte, atualizarDataAporte,
-  corrigirSaldoDia,
-} from "@/lib/api";
+import { EvolucaoPortfolio, PontoPortfolio, fetchEvolucaoPortfolio, Aporte, fetchAportes } from "@/lib/api";
+import AportesPanel from "./AportesPanel";
+import EvolucaoTable from "./EvolucaoTable";
+import MarcosCapital from "./MarcosCapital";
 
 function toTimestamp(data: string): number {
   return Math.floor(new Date(data + "T12:00:00Z").getTime() / 1000);
@@ -15,17 +14,55 @@ function fmt(v: number) {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function SummaryCards({ data, ultimo }: { data: EvolucaoPortfolio; ultimo: PontoPortfolio }) {
+  const lr = data.lucro_realizado_brl ?? 0;
+  const pa = data.pnl_aberto_brl ?? 0;
+  const total = lr + pa;
+  const investido = data.total_investido ?? data.capital_inicial;
+  const pct = investido > 0 ? (total / investido) * 100 : 0;
+  const pos = total >= 0;
+
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="bg-gray-800 rounded-lg px-3 py-2">
+        <p className="text-xs text-gray-500 mb-1">Total investido</p>
+        <p className="text-base font-bold font-mono text-gray-200">R$ {fmt(investido)}</p>
+      </div>
+      <div className="bg-gray-800 rounded-lg px-3 py-2">
+        <p className="text-xs text-gray-500 mb-1">Valor atual</p>
+        <p className="text-base font-bold font-mono text-white">R$ {fmt(ultimo.valor_brl)}</p>
+      </div>
+      <div className="bg-gray-800 rounded-lg px-3 py-2">
+        <p className="text-xs text-gray-500 mb-1">Lucro realizado</p>
+        <p className={`text-base font-bold font-mono ${lr >= 0 ? "text-green-400" : "text-red-400"}`}>
+          {lr >= 0 ? "+" : ""}R$ {fmt(lr)}
+        </p>
+        <p className="text-xs text-gray-600 mt-0.5">trades fechados</p>
+      </div>
+      <div className="bg-gray-800 rounded-lg px-3 py-2">
+        <p className="text-xs text-gray-500 mb-1">P&L aberto</p>
+        <p className={`text-base font-bold font-mono ${pa === 0 ? "text-gray-500" : pa >= 0 ? "text-green-400" : "text-red-400"}`}>
+          {pa === 0 ? "—" : `${pa >= 0 ? "+" : ""}R$ ${fmt(pa)}`}
+        </p>
+        <p className="text-xs text-gray-600 mt-0.5">posições abertas</p>
+      </div>
+      <div className={`rounded-lg px-3 py-2 ${pos ? "bg-green-950 border border-green-800" : "bg-red-950 border border-red-800"}`}>
+        <p className="text-xs text-gray-400 mb-1">Resultado total</p>
+        <p className={`text-base font-bold font-mono ${pos ? "text-green-400" : "text-red-400"}`}>
+          {pos ? "+" : ""}R$ {fmt(Math.abs(total))}
+        </p>
+        <p className={`text-xs font-mono font-semibold ${pos ? "text-green-500" : "text-red-500"}`}>
+          {pos ? "+" : ""}{pct.toFixed(2)}%
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function GraficoEvolucao() {
   const [data, setData] = useState<EvolucaoPortfolio | null>(null);
   const [aportes, setAportes] = useState<Aporte[]>([]);
   const [showAportes, setShowAportes] = useState(false);
-  const [novoAporteData, setNovoAporteData] = useState(() => new Date().toISOString().slice(0, 10));
-  const [novoAporteValor, setNovoAporteValor] = useState("");
-  const [salvando, setSalvando] = useState(false);
-  const [editandoData, setEditandoData] = useState<string | null>(null); // order_no ou "manual_<i>"
-  const [editDataValor, setEditDataValor] = useState("");
-  const [editandoSaldo, setEditandoSaldo] = useState<string | null>(null); // data do ponto
-  const [editSaldoValor, setEditSaldoValor] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
@@ -52,12 +89,9 @@ export default function GraficoEvolucao() {
       height: 220,
       timeScale: { timeVisible: false, secondsVisible: false },
       rightPriceScale: { borderColor: "#1F2937" },
-      localization: {
-        priceFormatter: (v: number) => `R$ ${fmt(v)}`,
-      },
+      localization: { priceFormatter: (v: number) => `R$ ${fmt(v)}` },
     });
 
-    // Linha de referência (capital acumulado)
     const refSeries = chart.addSeries(LineSeries, {
       color: "#4B5563",
       lineWidth: 1,
@@ -74,7 +108,6 @@ export default function GraficoEvolucao() {
       }))
     );
 
-    // Área do portfolio
     const ultimo = data.pontos[data.pontos.length - 1];
     const positivo = (ultimo?.variacao_brl ?? 0) >= 0;
     const cor = positivo ? "#10B981" : "#EF4444";
@@ -136,45 +169,6 @@ export default function GraficoEvolucao() {
   }, [data]);
 
   const ultimo = data?.pontos[data.pontos.length - 1];
-  const positivo = (ultimo?.variacao_brl ?? 0) >= 0;
-
-  async function handleAddAporte(e: React.FormEvent) {
-    e.preventDefault();
-    const valor = parseFloat(novoAporteValor.replace(",", "."));
-    if (!novoAporteData || isNaN(valor) || valor <= 0) return;
-    setSalvando(true);
-    try {
-      await registrarAporte(novoAporteData, valor);
-      setNovoAporteValor("");
-      reload();
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  async function handleDeleteAporte(a: Aporte) {
-    await deletarAporte(a.order_no, a.data, a.valor_brl);
-    reload();
-  }
-
-  function aporteKey(a: Aporte, i: number) {
-    return a.order_no ?? `manual_${i}`;
-  }
-
-  async function handleSalvarData(a: Aporte) {
-    if (!editDataValor) return;
-    await atualizarDataAporte(a, editDataValor);
-    setEditandoData(null);
-    reload();
-  }
-
-  async function handleSalvarSaldo(data: string) {
-    const valor = parseFloat(editSaldoValor.replace(",", "."));
-    if (isNaN(valor) || valor <= 0) return;
-    await corrigirSaldoDia(data, valor);
-    setEditandoSaldo(null);
-    reload();
-  }
 
   return (
     <div className="bg-gray-900 rounded-xl p-4 space-y-4">
@@ -195,295 +189,20 @@ export default function GraficoEvolucao() {
         </div>
       </div>
 
-      {/* Painel de aportes */}
-      {showAportes && (
-        <div className="bg-gray-800 rounded-lg p-3 space-y-3">
-          <p className="text-xs text-gray-400">
-            Registre cada depósito feito na Binance. A variação % mostrará apenas o lucro de trades.
-          </p>
-          <form onSubmit={handleAddAporte} className="flex gap-2 items-end">
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Data</label>
-              <input
-                type="date"
-                value={novoAporteData}
-                onChange={(e) => setNovoAporteData(e.target.value)}
-                className="bg-gray-700 text-white text-sm rounded px-2 py-1 border border-gray-600"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Valor (R$)</label>
-              <input
-                type="text"
-                placeholder="1000,00"
-                value={novoAporteValor}
-                onChange={(e) => setNovoAporteValor(e.target.value)}
-                className="bg-gray-700 text-white text-sm rounded px-2 py-1 border border-gray-600 w-28"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={salvando}
-              className="text-xs bg-blue-700 hover:bg-blue-600 px-3 py-1.5 rounded text-white disabled:opacity-50"
-            >
-              {salvando ? "..." : "+ Adicionar"}
-            </button>
-          </form>
-          {aportes.length > 0 && (
-            <table className="w-full text-xs text-gray-400">
-              <thead>
-                <tr className="border-b border-gray-700">
-                  <th className="text-left py-1">Data</th>
-                  <th className="text-right py-1">Valor</th>
-                  <th className="text-right py-1">Fonte</th>
-                  <th className="py-1" />
-                </tr>
-              </thead>
-              <tbody>
-                {aportes.map((a, i) => {
-                  const key = aporteKey(a, i);
-                  const editando = editandoData === key;
-                  return (
-                    <tr key={key} className="border-b border-gray-700/50">
-                      <td className="py-1.5 text-gray-300">
-                        {editando ? (
-                          <div className="flex gap-1 items-center">
-                            <input
-                              type="date"
-                              defaultValue={a.data}
-                              onChange={(e) => setEditDataValor(e.target.value)}
-                              className="bg-gray-600 text-white text-xs rounded px-1 py-0.5 border border-gray-500"
-                            />
-                            <button
-                              onClick={() => handleSalvarData(a)}
-                              className="text-green-400 hover:text-green-300 px-1 font-bold"
-                            >
-                              ✓
-                            </button>
-                            <button
-                              onClick={() => setEditandoData(null)}
-                              className="text-gray-500 hover:text-gray-400 px-1"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : (
-                          <span
-                            className="cursor-pointer hover:text-white underline decoration-dotted"
-                            title="Clique para corrigir a data"
-                            onClick={() => { setEditandoData(key); setEditDataValor(a.data); }}
-                          >
-                            {a.data}
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-right font-mono text-gray-200">R$ {fmt(a.valor_brl)}</td>
-                      <td className="text-right text-gray-600">{a.fonte ?? "manual"}</td>
-                      <td className="text-right">
-                        <button
-                          onClick={() => handleDeleteAporte(a)}
-                          className="text-red-500 hover:text-red-400 px-1"
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr>
-                  <td className="py-1 text-gray-500 text-xs">Total</td>
-                  <td className="text-right font-mono font-bold text-gray-200">
-                    R$ {fmt(aportes.reduce((s, a) => s + a.valor_brl, 0))}
-                  </td>
-                  <td colSpan={2} />
-                </tr>
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
+      {showAportes && <AportesPanel aportes={aportes} onReload={reload} />}
 
-      {/* Cards resumo */}
-      {data && ultimo && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <div className="bg-gray-800 rounded-lg px-3 py-2">
-            <p className="text-xs text-gray-500 mb-1">Total investido</p>
-            <p className="text-base font-bold font-mono text-gray-200">
-              R$ {fmt(data.total_investido ?? data.capital_inicial)}
-            </p>
-          </div>
-          <div className="bg-gray-800 rounded-lg px-3 py-2">
-            <p className="text-xs text-gray-500 mb-1">Valor atual</p>
-            <p className="text-base font-bold font-mono text-white">
-              R$ {fmt(ultimo.valor_brl)}
-            </p>
-          </div>
-          <div className="bg-gray-800 rounded-lg px-3 py-2">
-            <p className="text-xs text-gray-500 mb-1">Lucro realizado</p>
-            {(() => {
-              const lr = data.lucro_realizado_brl ?? 0;
-              const lrPos = lr >= 0;
-              return (
-                <p className={`text-base font-bold font-mono ${lrPos ? "text-green-400" : "text-red-400"}`}>
-                  {lrPos ? "+" : ""}R$ {fmt(lr)}
-                </p>
-              );
-            })()}
-            <p className="text-xs text-gray-600 mt-0.5">trades fechados</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg px-3 py-2">
-            <p className="text-xs text-gray-500 mb-1">P&L aberto</p>
-            {(() => {
-              const pa = data.pnl_aberto_brl ?? 0;
-              const paPos = pa >= 0;
-              return (
-                <p className={`text-base font-bold font-mono ${pa === 0 ? "text-gray-500" : paPos ? "text-green-400" : "text-red-400"}`}>
-                  {pa === 0 ? "—" : `${paPos ? "+" : ""}R$ ${fmt(pa)}`}
-                </p>
-              );
-            })()}
-            <p className="text-xs text-gray-600 mt-0.5">posições abertas</p>
-          </div>
-          {(() => {
-            const total = (data.lucro_realizado_brl ?? 0) + (data.pnl_aberto_brl ?? 0);
-            const investido = data.total_investido ?? data.capital_inicial;
-            const pct = investido > 0 ? (total / investido) * 100 : 0;
-            const pos = total >= 0;
-            return (
-              <div className={`rounded-lg px-3 py-2 ${pos ? "bg-green-950 border border-green-800" : "bg-red-950 border border-red-800"}`}>
-                <p className="text-xs text-gray-400 mb-1">Resultado total</p>
-                <p className={`text-base font-bold font-mono ${pos ? "text-green-400" : "text-red-400"}`}>
-                  {pos ? "+" : ""}R$ {fmt(Math.abs(total))}
-                </p>
-                <p className={`text-xs font-mono font-semibold ${pos ? "text-green-500" : "text-red-500"}`}>
-                  {pos ? "+" : ""}{pct.toFixed(2)}%
-                </p>
-              </div>
-            );
-          })()}
-        </div>
-      )}
+      {data && ultimo && <SummaryCards data={data} ultimo={ultimo} />}
 
-      {/* Tabela por dia */}
       {data && data.pontos.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs text-gray-400">
-            <thead>
-              <tr className="border-b border-gray-800">
-                <th className="text-left py-1 font-medium">Data</th>
-                <th className="text-right py-1 font-medium">Valor total</th>
-                <th className="text-right py-1 font-medium">Investido</th>
-                <th className="text-right py-1 font-medium">Lucro R$</th>
-                <th className="text-right py-1 font-medium">Lucro %</th>
-                <th className="text-right py-1 font-medium">Δ dia</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.pontos.map((p, i) => {
-                const pos = p.variacao_brl >= 0;
-                const editandoEste = editandoSaldo === p.data;
-                const prev = i > 0 ? data.pontos[i - 1] : null;
-                const deltaDia = prev !== null ? p.valor_brl - prev.valor_brl : null;
-                const deltaPos = deltaDia !== null ? deltaDia >= 0 : null;
-                return (
-                  <tr key={p.data} className="border-b border-gray-800/50">
-                    <td className="py-1.5 text-gray-300">
-                      {p.data}
-                      {p.a_mercado && (
-                        <span className="ml-1 text-gray-600">(atual)</span>
-                      )}
-                    </td>
-                    <td className="text-right font-mono text-gray-200">
-                      {editandoEste ? (
-                        <div className="flex gap-1 items-center justify-end">
-                          <input
-                            type="text"
-                            defaultValue={p.valor_brl.toFixed(2).replace(".", ",")}
-                            onChange={(e) => setEditSaldoValor(e.target.value)}
-                            className="bg-gray-700 text-white text-xs rounded px-1 py-0.5 border border-gray-500 w-24 text-right"
-                          />
-                          <button onClick={() => handleSalvarSaldo(p.data)} className="text-green-400 hover:text-green-300 font-bold">✓</button>
-                          <button onClick={() => setEditandoSaldo(null)} className="text-gray-500 hover:text-gray-400">✕</button>
-                        </div>
-                      ) : (
-                        <span
-                          className={`cursor-pointer hover:text-white ${!p.a_mercado ? "underline decoration-dotted" : ""}`}
-                          title={!p.a_mercado ? "Clique para corrigir o saldo do dia" : ""}
-                          onClick={() => { if (!p.a_mercado) { setEditandoSaldo(p.data); setEditSaldoValor(p.valor_brl.toFixed(2)); } }}
-                        >
-                          R$ {fmt(p.valor_brl)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="text-right font-mono text-gray-500">
-                      R$ {fmt(p.capital_acumulado ?? data.capital_inicial)}
-                    </td>
-                    <td className={`text-right font-mono ${pos ? "text-green-400" : "text-red-400"}`}>
-                      {pos ? "+" : ""}R$ {fmt(p.variacao_brl)}
-                    </td>
-                    <td className={`text-right font-mono ${pos ? "text-green-400" : "text-red-400"}`}>
-                      {pos ? "+" : ""}{p.variacao_pct.toFixed(2)}%
-                    </td>
-                    <td className={`text-right font-mono ${deltaPos === null ? "text-gray-600" : deltaPos ? "text-green-400" : "text-red-400"}`}>
-                      {deltaDia === null ? "—" : `${deltaPos ? "+" : ""}R$ ${fmt(Math.abs(deltaDia))}`}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <EvolucaoTable
+          pontos={data.pontos}
+          capitalInicial={data.capital_inicial}
+          onReload={reload}
+        />
       )}
 
-      {/* Marcos de crescimento do capital */}
-      {aportes.length > 0 && (() => {
-        // Constrói linha do tempo acumulando capital por ordem de data
-        const sorted = [...aportes].sort((a, b) => a.data.localeCompare(b.data));
-        const marcos: { data: string; capital: number; delta: number; pct: number; tipo: string }[] = [];
-        let acumulado = 0;
-        for (const a of sorted) {
-          const anterior = acumulado;
-          acumulado = Math.round((acumulado + a.valor_brl) * 100) / 100;
-          const delta = Math.round(a.valor_brl * 100) / 100;
-          const pct = anterior > 0 ? (delta / anterior) * 100 : 0;
-          marcos.push({
-            data: a.data,
-            capital: acumulado,
-            delta,
-            pct,
-            tipo: a.fonte === "lucro_reinvestido" ? "lucro" : "aporte",
-          });
-        }
-        return (
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-              Marcos de capital
-            </p>
-            <div className="flex flex-col gap-1">
-              {marcos.map((m, i) => (
-                <div key={i} className="flex items-center gap-3 text-xs">
-                  <span className="text-gray-500 w-24 shrink-0">{m.data}</span>
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${m.tipo === "lucro" ? "bg-green-500" : "bg-blue-500"}`} />
-                  <span className="font-mono text-gray-200 w-28 shrink-0">
-                    R$ {fmt(m.capital)}
-                  </span>
-                  {i > 0 && (
-                    <span className={`font-mono font-semibold ${m.delta >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      +R$ {fmt(m.delta)}
-                      <span className="text-gray-500 ml-1">({m.pct.toFixed(2)}%)</span>
-                    </span>
-                  )}
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${m.tipo === "lucro" ? "bg-green-900 text-green-400" : "bg-blue-900 text-blue-400"}`}>
-                    {m.tipo === "lucro" ? "lucro reinvestido" : "aporte"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
+      <MarcosCapital aportes={aportes} />
 
-      {/* Gráfico */}
       <div className="relative">
         <div ref={containerRef} className="rounded-lg overflow-hidden" />
         <div

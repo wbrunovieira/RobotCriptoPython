@@ -212,7 +212,7 @@ export interface Aporte {
   data: string;
   valor_brl: number;
   order_no?: string;
-  fonte?: "binance" | "manual";
+  fonte?: "binance" | "manual" | "lucro_reinvestido";
 }
 
 export interface AportePendente {
