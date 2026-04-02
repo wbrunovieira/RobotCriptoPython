@@ -4,6 +4,7 @@ import { ResumoStats } from "@/lib/api";
 interface Props {
   stats: ResumoStats;
   titulo?: string;
+  moeda?: string;
 }
 
 function Metrica({ label, valor, destaque }: { label: string; valor: string; destaque?: "verde" | "vermelho" }) {
@@ -16,8 +17,10 @@ function Metrica({ label, valor, destaque }: { label: string; valor: string; des
   );
 }
 
-export default function StatsResumo({ stats, titulo = "Hoje" }: Props) {
+export default function StatsResumo({ stats, titulo = "Hoje", moeda = "BRL" }: Props) {
   const lucroDestaque = stats.lucro_total_brl > 0 ? "verde" : stats.lucro_total_brl < 0 ? "vermelho" : undefined;
+  const prefix = moeda === "BRL" ? "R$" : moeda;
+  const locale = moeda === "BRL" ? "pt-BR" : "en-US";
 
   return (
     <div className="space-y-3">
@@ -26,17 +29,17 @@ export default function StatsResumo({ stats, titulo = "Hoje" }: Props) {
         <Metrica label="Operações" valor={String(stats.total_operacoes)} />
         <Metrica
           label="Lucro"
-          valor={`R$ ${stats.lucro_total_brl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          valor={`${prefix} ${stats.lucro_total_brl.toLocaleString(locale, { minimumFractionDigits: 2 })}`}
           destaque={lucroDestaque}
         />
         <Metrica label="Acerto" valor={`${stats.taxa_acerto_pct.toFixed(0)}%`} />
         <Metrica
           label="Maior ganho"
-          valor={`R$ ${stats.maior_ganho.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          valor={`${prefix} ${stats.maior_ganho.toLocaleString(locale, { minimumFractionDigits: 2 })}`}
           destaque={stats.maior_ganho > 0 ? "verde" : undefined}
         />
       </div>
-      {stats.imposto_devido_brl !== undefined && stats.imposto_devido_brl > 0 && (
+      {moeda === "BRL" && stats.imposto_devido_brl !== undefined && stats.imposto_devido_brl > 0 && (
         <div className="bg-yellow-900/40 border border-yellow-700 rounded-lg p-2 text-sm text-yellow-300">
           ⚠ Imposto estimado: R$ {stats.imposto_devido_brl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
         </div>

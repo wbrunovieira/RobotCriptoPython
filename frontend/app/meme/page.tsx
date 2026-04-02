@@ -111,7 +111,7 @@ export default function MemePage() {
 
         {/* Stats do dia */}
         {statsDia && (
-          <StatsResumo stats={statsDia} titulo={`Hoje — ${statsDia.data ?? ""}`} />
+          <StatsResumo stats={statsDia} titulo={`Hoje — ${statsDia.data ?? ""}`} moeda="USDT" />
         )}
 
         {/* Operações de hoje */}
