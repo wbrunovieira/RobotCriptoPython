@@ -47,7 +47,7 @@ from bots.brl.config import (
     BOT_ID, PERIODO_CANDLE, STOP_PCT, TAKE_PROFIT_PCT, TETO_SALDO_PCT,
     MAX_POSICOES, PERCENTUAL_COMPRA, STOP_PORTFOLIO_PCT, BLOQUEIO_PORTFOLIO_FILE,
     MAX_TENTATIVAS, INTERVALO_MONITORAMENTO, INTERVALO_ESTRATEGIA,
-    _intervalo_estrategia_min, BLOQUEIO_QUINTA_FEIRA,
+    _intervalo_estrategia_min, BLOQUEIO_QUINTA_FEIRA, COOLDOWN_STOP_HORAS,
 )
 
 load_dotenv()
@@ -211,6 +211,59 @@ def _bloquear_portfolio(horas: int = 24):
     except Exception:
         os.unlink(tmp)
         raise
+
+
+_COOLDOWN_FILE = "run/cooldown_pares.json"
+
+
+def _registrar_cooldown(simbolo: str, horas: int = COOLDOWN_STOP_HORAS) -> None:
+    """Registra cooldown de re-entrada para o par após trailing stop.
+
+    Impede re-entradas no mesmo par por `horas` horas, evitando múltiplos
+    stops consecutivos em tendências de baixa (ex: 3 stops BNB em 9h no Apr 2).
+    """
+    try:
+        os.makedirs("run", exist_ok=True)
+        cooldowns: dict = {}
+        if os.path.exists(_COOLDOWN_FILE):
+            with open(_COOLDOWN_FILE) as f:
+                cooldowns = _json.load(f)
+        bloqueio_ate = (pd.Timestamp.now(tz="America/Sao_Paulo") + pd.Timedelta(hours=horas)).isoformat()
+        cooldowns[simbolo] = bloqueio_ate
+        fd, tmp = tempfile.mkstemp(dir="run", prefix=".tmp_cd_")
+        try:
+            with os.fdopen(fd, "w") as f:
+                _json.dump(cooldowns, f)
+            os.replace(tmp, _COOLDOWN_FILE)
+        except Exception:
+            os.unlink(tmp)
+            raise
+        logger.info("[%s][cooldown] Cooldown de %dh registrado até %s.", simbolo, horas,
+                    pd.Timestamp(bloqueio_ate).strftime("%Y-%m-%d %H:%M"))
+    except Exception as e:
+        logger.error("[%s][cooldown] Erro ao registrar cooldown: %s", simbolo, e)
+
+
+def _par_em_cooldown(simbolo: str) -> bool:
+    """Retorna True se o par ainda está em período de cooldown pós stop-loss."""
+    if not os.path.exists(_COOLDOWN_FILE):
+        return False
+    try:
+        with open(_COOLDOWN_FILE) as f:
+            cooldowns = _json.load(f)
+        if simbolo not in cooldowns:
+            return False
+        bloqueio_ate = pd.Timestamp(cooldowns[simbolo])
+        agora = pd.Timestamp.now(tz="America/Sao_Paulo")
+        if bloqueio_ate.tzinfo is None:
+            bloqueio_ate = bloqueio_ate.tz_localize("America/Sao_Paulo")
+        if agora < bloqueio_ate:
+            logger.info("[%s][cooldown] Bloqueado até %s.", simbolo, bloqueio_ate.strftime("%Y-%m-%d %H:%M"))
+            return True
+        return False
+    except Exception as e:
+        logger.error("[%s][cooldown] Erro ao verificar cooldown: %s", simbolo, e)
+        return False
 
 
 def _limite_diario_atingido() -> bool:
@@ -521,23 +574,8 @@ def monitorar_stop_par(cliente, par):
             )
             _, saldos = obter_saldos(cliente)
             saldo_ativo_venda = saldos.get(par["ativo"], 0.0)
-            capital_posicao_stop = saldo_ativo_venda * preco_atual
             executar_venda(cliente, par, saldo_ativo_venda, preco_atual, motivo="Trailing Stop")
-
-            saldo_brl, saldos_re = obter_saldos(cliente)
-            if _portfolio_bloqueado() or _limite_diario_atingido():
-                return
-            dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
-            if not dados.empty:
-                sinal = avaliar_sinal(dados, posicao=False, reentrada=True, bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA)
-                if sinal == "COMPRAR":
-                    stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
-                    saldo_reentrada = min(
-                        _saldo_para_bot(saldo_brl, saldos_re),
-                        capital_posicao_stop / (TETO_SALDO_PCT * PERCENTUAL_COMPRA),
-                    )
-                    logger.info("[%s][stop] Reentrada após trailing stop (capital: R$%.2f).", simbolo, capital_posicao_stop)
-                    executar_compra(cliente, par, saldo_reentrada, preco_atual, stop_pct=stop_atr)
+            _registrar_cooldown(simbolo)
 
     except Exception as e:
         logger.error("[%s][stop] Erro: %s", simbolo, e)
@@ -593,7 +631,9 @@ def ciclo_par(cliente, par, saldo_brl, saldo_ativo):
                           bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA)
 
     if sinal == "COMPRAR":
-        if _portfolio_bloqueado():
+        if _par_em_cooldown(simbolo):
+            pass  # log já emitido dentro de _par_em_cooldown
+        elif _portfolio_bloqueado():
             logger.info("[%s] Compra bloqueada: stop de portfolio ativo.", simbolo)
         elif _limite_diario_atingido():
             logger.info("[%s] Compra bloqueada: limite de perda diária atingido.", simbolo)
