@@ -319,6 +319,8 @@ export const fetchMemeScanner = () =>
   apiFetch<{ total: number; resultados: MemeScore[] }>("/meme/scanner").then(r => r.resultados);
 export const fetchMemeOperacoes = () => apiFetch<Operacao[]>("/meme/operacoes");
 export const fetchMemeStatsDia = () => apiFetch<ResumoStats>("/meme/stats/dia");
+export const fetchMemeStatsMes = (mes: string) => apiFetch<ResumoStats>(`/meme/stats/mes?mes=${mes}`);
+export const fetchMemeOperacoesMes = (mes: string) => apiFetch<Operacao[]>(`/meme/operacoes/mes?mes=${mes}`);
 export const fetchMemeAportes = () => apiFetch<MemeAporte[]>("/meme/aportes");
 export const registrarMemeAporte = (data: string, valor_usdt: number) =>
   apiFetch<{ ok: boolean }>("/meme/aporte", {

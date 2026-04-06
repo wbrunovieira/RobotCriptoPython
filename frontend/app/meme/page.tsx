@@ -7,6 +7,8 @@ import {
   fetchMemeScanner,
   fetchMemeOperacoes,
   fetchMemeStatsDia,
+  fetchMemeStatsMes,
+  fetchMemeOperacoesMes,
   MemeStatus,
   MemeScore,
   Operacao,
@@ -22,6 +24,7 @@ import TabelaOperacoes from "@/components/TabelaOperacoes";
 export default function MemePage() {
   const router = useRouter();
   const [precoAtual, setPrecoAtual] = useState<number | undefined>(undefined);
+  const [mesAtual] = useState(() => new Date().toISOString().slice(0, 7));
 
   useEffect(() => {
     if (!tokenSalvo()) router.push("/login");
@@ -49,6 +52,18 @@ export default function MemePage() {
     "meme-stats-dia",
     fetchMemeStatsDia,
     15000
+  );
+
+  const { data: statsMes } = usePolling<ResumoStats>(
+    `meme-stats-mes-${mesAtual}`,
+    () => fetchMemeStatsMes(mesAtual),
+    60000
+  );
+
+  const { data: operacoesMes } = usePolling<Operacao[]>(
+    `meme-operacoes-mes-${mesAtual}`,
+    () => fetchMemeOperacoesMes(mesAtual),
+    60000
   );
 
   // Derive precoAtual from scanner scores when in position
@@ -114,6 +129,11 @@ export default function MemePage() {
           <StatsResumo stats={statsDia} titulo={`Hoje — ${statsDia.data ?? ""}`} moeda="USDT" />
         )}
 
+        {/* Stats do mês */}
+        {statsMes && (
+          <StatsResumo stats={statsMes} titulo={`Mês — ${mesAtual}`} moeda="USDT" />
+        )}
+
         {/* Operações de hoje */}
         <section>
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
@@ -123,6 +143,18 @@ export default function MemePage() {
             <TabelaOperacoes operacoes={operacoes ?? []} />
           </div>
         </section>
+
+        {/* Operações do mês */}
+        {operacoesMes && operacoesMes.length > 0 && (
+          <section>
+            <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+              Operações do mês — {mesAtual}
+            </h2>
+            <div className="bg-gray-900 rounded-xl p-4">
+              <TabelaOperacoes operacoes={operacoesMes} />
+            </div>
+          </section>
+        )}
 
       </main>
     </div>

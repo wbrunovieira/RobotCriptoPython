@@ -14,6 +14,7 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, _ROOT)
 
 from infra.stats_store import carregar_stats_do_dia, calcular_resumo
+from infra.fiscal import carregar_stats_do_mes, calcular_resumo_mensal
 from api.deps import _verificar_token
 
 router = APIRouter(prefix="/meme")
@@ -176,6 +177,23 @@ def get_scanner():
         return {"total": len(resultados), "resultados": resultados}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao executar scanner: {e}")
+
+
+@router.get("/stats/mes", dependencies=[Depends(_verificar_token)])
+def get_stats_mes(mes: str = Query(..., description="Formato: YYYY-MM")):
+    stats_list = carregar_stats_do_mes(mes, diretorio=_MEME_STATS_DIR)
+    resumo = calcular_resumo_mensal(stats_list)
+    resumo["mes"] = mes
+    return resumo
+
+
+@router.get("/operacoes/mes", dependencies=[Depends(_verificar_token)])
+def get_operacoes_mes(mes: str = Query(..., description="Formato: YYYY-MM")):
+    stats_list = carregar_stats_do_mes(mes, diretorio=_MEME_STATS_DIR)
+    operacoes = []
+    for stats in stats_list:
+        operacoes.extend(stats.get("operacoes", []))
+    return operacoes
 
 
 @router.get("/operacoes", dependencies=[Depends(_verificar_token)])
