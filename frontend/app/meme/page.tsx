@@ -140,7 +140,7 @@ export default function MemePage() {
             Operações de hoje
           </h2>
           <div className="bg-gray-900 rounded-xl p-4">
-            <TabelaOperacoes operacoes={operacoes ?? []} />
+            <TabelaOperacoes operacoes={operacoes ?? []} moeda="USDT" />
           </div>
         </section>
 
@@ -151,7 +151,7 @@ export default function MemePage() {
               Operações do mês — {mesAtual}
             </h2>
             <div className="bg-gray-900 rounded-xl p-4">
-              <TabelaOperacoes operacoes={operacoesMes} />
+              <TabelaOperacoes operacoes={operacoesMes} moeda="USDT" />
             </div>
           </section>
         )}

@@ -3,9 +3,32 @@ import { Operacao } from "@/lib/api";
 
 interface Props {
   operacoes: Operacao[];
+  moeda?: "BRL" | "USDT";
 }
 
-export default function TabelaOperacoes({ operacoes }: Props) {
+function fmtPreco(valor: number, moeda: "BRL" | "USDT"): string {
+  if (moeda === "USDT") {
+    // Preços de meme coins podem ter muitas casas decimais
+    if (valor < 0.0001) return `$ ${valor.toFixed(8)}`;
+    if (valor < 0.01)   return `$ ${valor.toFixed(6)}`;
+    if (valor < 1)      return `$ ${valor.toFixed(4)}`;
+    return `$ ${valor.toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+  }
+  return `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+}
+
+function fmtValor(valor: number, moeda: "BRL" | "USDT"): string {
+  if (moeda === "USDT") {
+    return `$ ${valor.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+  }
+  return `R$ ${valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+}
+
+function fmtPar(par: string, moeda: "BRL" | "USDT"): string {
+  return moeda === "USDT" ? par.replace("USDT", "") : par.replace("BRL", "");
+}
+
+export default function TabelaOperacoes({ operacoes, moeda = "BRL" }: Props) {
   if (operacoes.length === 0) {
     return <p className="text-gray-500 text-sm text-center py-8">Nenhuma operação registrada.</p>;
   }
@@ -27,8 +50,8 @@ export default function TabelaOperacoes({ operacoes }: Props) {
         <tbody>
           {operacoes.map((op, i) => {
             const isCompra = op.tipo === "COMPRA";
-            const lucroColor = op.lucro_brl
-              ? op.lucro_brl > 0 ? "text-green-400" : "text-red-400"
+            const lucroColor = op.lucro_brl != null
+              ? op.lucro_brl > 0 ? "text-green-400" : op.lucro_brl < 0 ? "text-red-400" : ""
               : "";
             return (
               <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50">
@@ -36,7 +59,7 @@ export default function TabelaOperacoes({ operacoes }: Props) {
                 <td className="py-2 pr-4">
                   {op.par ? (
                     <span className="text-xs font-mono font-semibold text-gray-300">
-                      {op.par.replace("BRL", "")}
+                      {fmtPar(op.par, moeda)}
                     </span>
                   ) : "—"}
                 </td>
@@ -45,17 +68,15 @@ export default function TabelaOperacoes({ operacoes }: Props) {
                     {op.tipo}
                   </span>
                 </td>
-                <td className="py-2 pr-4 text-right font-mono">
-                  R$ {op.preco.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                <td className="py-2 pr-4 text-right font-mono text-xs">
+                  {fmtPreco(op.preco, moeda)}
                 </td>
                 <td className="py-2 pr-4 text-right font-mono">{op.quantidade}</td>
                 <td className="py-2 pr-4 text-right font-mono">
-                  R$ {op.total_brl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  {fmtValor(op.total_brl, moeda)}
                 </td>
                 <td className={`py-2 text-right font-mono ${lucroColor}`}>
-                  {op.lucro_brl !== undefined
-                    ? `R$ ${op.lucro_brl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-                    : "—"}
+                  {op.lucro_brl != null ? fmtValor(op.lucro_brl, moeda) : "—"}
                 </td>
               </tr>
             );
