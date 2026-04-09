@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from core.sinais import avaliar_sinal, btc_acima_ma50
+from core.padroes import detectar_padrao_entrada
 from core.risco import (
     stop_pct_por_atr,
     atualizar_trailing_stop,
@@ -35,6 +36,7 @@ class ConfigBacktest:
     percentual_compra: float = 0.90
     filtro_btc: bool = True
     bloqueio_quinta: bool = True
+    usar_padroes: bool = False  # entra no breakout de padrão mesmo sem MA crossover
 
 
 def buscar_candles(cliente, simbolo: str, intervalo: str, dias: int) -> pd.DataFrame:
@@ -169,8 +171,18 @@ def simular_par(
             bloqueio_quinta=cfg.bloqueio_quinta,
         )
 
-        # ── 5. Compra: verifica filtro BTC antes de entrar ──
-        if sinal == "COMPRAR" and not posicao:
+        # ── 5. Determina motivo de entrada (MA crossover ou padrão gráfico) ──
+        motivo_entrada = None
+        if not posicao:
+            if sinal == "COMPRAR":
+                motivo_entrada = "sinal_ma"
+            elif cfg.usar_padroes:
+                padrao = detectar_padrao_entrada(janela)
+                if padrao:
+                    motivo_entrada = f"padrao_{padrao}"
+                    logger.debug("[%s][padrao] %s detectado em %s.", simbolo, padrao, ts)
+
+        if motivo_entrada:
             if cfg.filtro_btc:
                 btc_janela = _btc_janela_ate(dados_btc, ts)
                 if not btc_acima_ma50(btc_janela):
@@ -196,6 +208,7 @@ def simular_par(
                 "timestamp": str(ts), "preco": preco_fechamento,
                 "quantidade": quantidade, "total_brl": custo,
                 "stop_pct": round(stop_pct_atual * 100, 2),
+                "motivo_entrada": motivo_entrada,
             })
 
         # ── 6. Venda por sinal MA ──
@@ -267,10 +280,29 @@ def calcular_metricas(resultado: dict) -> dict:
 
     retorno_pct = (capital_final - capital_inicial) / capital_inicial * 100 if capital_inicial else 0.0
 
-    motivos = {}
+    motivos_saida = {}
     for v in vendas:
         m = v.get("motivo", "?")
-        motivos[m] = motivos.get(m, 0) + 1
+        motivos_saida[m] = motivos_saida.get(m, 0) + 1
+
+    # Rastreia entradas por padrão vs MA crossover
+    compras = [op for op in operacoes if op["tipo"] == "COMPRA"]
+    entradas_padrao = [c for c in compras if c.get("motivo_entrada", "").startswith("padrao_")]
+    entradas_ma = [c for c in compras if c.get("motivo_entrada") == "sinal_ma"]
+
+    # Lucros das vendas que vieram após entrada por padrão
+    # (associa cada venda à compra anterior pelo índice de posição)
+    pares_op = []
+    compra_aberta = None
+    for op in operacoes:
+        if op["tipo"] == "COMPRA":
+            compra_aberta = op
+        elif op["tipo"] == "VENDA" and compra_aberta and "lucro_brl" in op:
+            pares_op.append((compra_aberta, op))
+            compra_aberta = None
+
+    lucros_padrao = [v["lucro_brl"] for c, v in pares_op if c.get("motivo_entrada", "").startswith("padrao_")]
+    lucros_ma = [v["lucro_brl"] for c, v in pares_op if c.get("motivo_entrada") == "sinal_ma"]
 
     return {
         "simbolo": resultado["simbolo"],
@@ -284,5 +316,9 @@ def calcular_metricas(resultado: dict) -> dict:
         "maior_ganho_brl": round(max(lucros), 2) if lucros else 0.0,
         "maior_perda_brl": round(min(lucros), 2) if lucros else 0.0,
         "drawdown_maximo_pct": round(drawdown_max, 2),
-        "saidas_por_motivo": motivos,
+        "saidas_por_motivo": motivos_saida,
+        "entradas_por_padrao": len(entradas_padrao),
+        "entradas_por_ma": len(entradas_ma),
+        "lucro_entradas_padrao": round(sum(lucros_padrao), 2) if lucros_padrao else 0.0,
+        "lucro_entradas_ma": round(sum(lucros_ma), 2) if lucros_ma else 0.0,
     }
