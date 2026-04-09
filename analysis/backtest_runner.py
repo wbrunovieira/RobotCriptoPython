@@ -12,11 +12,15 @@ Uso:
 """
 import argparse
 import json
+import logging
 import os
 import sys
 
 import pandas as pd
 from dotenv import load_dotenv
+
+# Envia todos os logs para stderr para não poluir o relatório no stdout
+logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 load_dotenv()
