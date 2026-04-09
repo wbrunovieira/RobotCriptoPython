@@ -41,13 +41,14 @@ from core.risco import (
     verificar_take_profit,
     verificar_lucro_minimo,
 )
-from core.sinais import avaliar_sinal, calcular_quantidade
+from core.sinais import avaliar_sinal, calcular_quantidade, btc_acima_ma50
 from pares import listar_pares, arquivo_posicao, calcular_saldo_disponivel, consolidar_resumo, contar_posicoes_abertas
 from bots.brl.config import (
     BOT_ID, PERIODO_CANDLE, STOP_PCT, TAKE_PROFIT_PCT, TETO_SALDO_PCT,
     MAX_POSICOES, PERCENTUAL_COMPRA, STOP_PORTFOLIO_PCT, BLOQUEIO_PORTFOLIO_FILE,
     MAX_TENTATIVAS, INTERVALO_MONITORAMENTO, INTERVALO_ESTRATEGIA,
     _intervalo_estrategia_min, BLOQUEIO_QUINTA_FEIRA, COOLDOWN_STOP_HORAS,
+    FILTRO_TENDENCIA_BTC,
 )
 
 load_dotenv()
@@ -134,6 +135,23 @@ def pegando_dados(cliente, codigo, intervalo):
         return precos
     except Exception as e:
         logger.error("[%s] Erro ao pegar dados: %s", codigo, e)
+        return pd.DataFrame()
+
+
+def _obter_dados_btc_4h(cliente) -> pd.DataFrame:
+    """Busca os últimos 60 candles de 4h do BTCBRL para o filtro de tendência global."""
+    try:
+        candles = cliente.get_klines(symbol="BTCBRL", interval="4h", limit=60)
+        df = pd.DataFrame(candles)
+        df.columns = [
+            "tempo_abertura", "abertura", "maxima", "minima", "fechamento", "volume",
+            "tempo_fechamento", "moedas_negociadas", "numero_trades",
+            "volume_ativo_base_compra", "volume_ativo_cotacao", "-",
+        ]
+        df["fechamento"] = df["fechamento"].astype(float)
+        return df[["fechamento"]]
+    except Exception as e:
+        logger.error("[btc_tendencia] Erro ao buscar candles BTC 4h: %s", e)
         return pd.DataFrame()
 
 
@@ -530,6 +548,11 @@ def monitorar_stop_par(cliente, par):
             saldo_brl, saldos_re = obter_saldos(cliente)
             if _portfolio_bloqueado() or _limite_diario_atingido():
                 return
+            if FILTRO_TENDENCIA_BTC:
+                dados_btc_tp = _obter_dados_btc_4h(cliente)
+                if not btc_acima_ma50(dados_btc_tp):
+                    logger.info("[%s][tp] Reentrada bloqueada: BTC abaixo da MA50 (4h).", simbolo)
+                    return
             dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
             if not dados.empty:
                 sinal = avaliar_sinal(dados, posicao=False, reentrada=True, bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA)
@@ -591,7 +614,7 @@ def monitorar_stop(cliente):
         monitorar_stop_par(cliente, par)
 
 
-def ciclo_par(cliente, par, saldo_brl, saldo_ativo):
+def ciclo_par(cliente, par, saldo_brl, saldo_ativo, dados_btc: pd.DataFrame = None):
     """Avaliação completa de estratégia para um par."""
     simbolo = par["simbolo"]
     ativo = par["ativo"]
@@ -631,7 +654,9 @@ def ciclo_par(cliente, par, saldo_brl, saldo_ativo):
                           bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA)
 
     if sinal == "COMPRAR":
-        if _par_em_cooldown(simbolo):
+        if FILTRO_TENDENCIA_BTC and dados_btc is not None and not btc_acima_ma50(dados_btc):
+            logger.info("[%s] Compra bloqueada: BTC abaixo da MA50 (4h) — mercado em baixa.", simbolo)
+        elif _par_em_cooldown(simbolo):
             pass  # log já emitido dentro de _par_em_cooldown
         elif _portfolio_bloqueado():
             logger.info("[%s] Compra bloqueada: stop de portfolio ativo.", simbolo)
@@ -682,10 +707,18 @@ def ciclo(cliente):
         logger.info("Dia: %d ops | Lucro: R$%.2f | Acerto: %.0f%%",
                     resumo["total_operacoes"], resumo["lucro_total_brl"], resumo["taxa_acerto_pct"])
 
+    dados_btc = pd.DataFrame()
+    if FILTRO_TENDENCIA_BTC:
+        dados_btc = _obter_dados_btc_4h(cliente)
+        if btc_acima_ma50(dados_btc):
+            logger.info("[btc_tendencia] BTC acima da MA50 (4h) — tendência OK, entradas liberadas.")
+        else:
+            logger.warning("[btc_tendencia] BTC abaixo da MA50 (4h) — novas compras bloqueadas.")
+
     for par in listar_pares():
         saldo_ativo = saldos.get(par["ativo"], 0.0)
         saldo_para_bot = _saldo_para_bot(saldo_brl, saldos)
-        ciclo_par(cliente, par, saldo_para_bot, saldo_ativo)
+        ciclo_par(cliente, par, saldo_para_bot, saldo_ativo, dados_btc=dados_btc)
         saldo_brl, saldos = obter_saldos(cliente)
 
 

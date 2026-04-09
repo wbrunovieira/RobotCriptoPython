@@ -278,7 +278,7 @@ def _formatar_quantidade(quantidade_raw: float, step_size: str) -> tuple[str, fl
     """
     step = Decimal(step_size)
     qty = Decimal(str(quantidade_raw)).quantize(step, rounding=ROUND_DOWN)
-    decimal_places = abs(step.as_tuple().exponent)
+    decimal_places = max(0, -step.normalize().as_tuple().exponent)
     return format(qty, f".{decimal_places}f"), float(qty)
 
 

@@ -84,6 +84,19 @@ def _quinta_feira_bloqueada(agora: pd.Timestamp = None) -> bool:
     return agora.dayofweek == 3  # 3 = quinta-feira
 
 
+def btc_acima_ma50(dados_btc: pd.DataFrame) -> bool:
+    """Retorna True se o BTC está acima da MA50 de 4h — tendência global de alta.
+
+    Em caso de dados insuficientes ou erro, retorna True para não bloquear operações
+    por falha de conectividade.
+    """
+    if dados_btc.empty or len(dados_btc) < 50:
+        return True
+    fechamento = dados_btc["fechamento"].astype(float)
+    ma50 = fechamento.rolling(window=50).mean().iloc[-1]
+    return bool(float(fechamento.iloc[-1]) > ma50)
+
+
 def avaliar_sinal(
     dados: pd.DataFrame,
     posicao: bool,

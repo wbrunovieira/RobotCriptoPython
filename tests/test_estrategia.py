@@ -6,7 +6,7 @@ from core.risco import (
     verificar_stop_loss, verificar_lucro_minimo, atualizar_trailing_stop,
     verificar_trailing_stop, verificar_take_profit, stop_pct_por_atr, verificar_breakeven,
 )
-from core.sinais import calcular_quantidade, avaliar_sinal, detectar_reversao_rsi
+from core.sinais import calcular_quantidade, avaliar_sinal, detectar_reversao_rsi, btc_acima_ma50
 
 
 def _make_dados(n=60, tendencia="alta"):
@@ -748,3 +748,33 @@ def test_sinal2_nao_bloqueado_por_adx_baixo(monkeypatch):
     segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
     sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
     assert sinal == "COMPRAR"
+
+
+# --- btc_acima_ma50 ---
+
+def _make_btc_dados(n=60, preco_atual_acima=True):
+    """Gera DataFrame de candles BTC onde o último preço está acima ou abaixo da MA50."""
+    if preco_atual_acima:
+        precos = [100.0 + i for i in range(n)]
+    else:
+        precos = [100.0 + (n - 1 - i) for i in range(n)]
+    return pd.DataFrame({"fechamento": precos})
+
+
+def test_btc_acima_ma50_retorna_true_em_tendencia_alta():
+    dados = _make_btc_dados(n=60, preco_atual_acima=True)
+    assert btc_acima_ma50(dados) is True
+
+
+def test_btc_acima_ma50_retorna_false_em_tendencia_baixa():
+    dados = _make_btc_dados(n=60, preco_atual_acima=False)
+    assert btc_acima_ma50(dados) is False
+
+
+def test_btc_acima_ma50_dados_insuficientes_nao_bloqueia():
+    dados = pd.DataFrame({"fechamento": [100.0, 90.0, 80.0]})
+    assert btc_acima_ma50(dados) is True
+
+
+def test_btc_acima_ma50_dataframe_vazio_nao_bloqueia():
+    assert btc_acima_ma50(pd.DataFrame()) is True
