@@ -39,16 +39,10 @@ class ConfigBacktest:
     usar_padroes: bool = False  # entra no breakout de padrão mesmo sem MA crossover
 
 
-def buscar_candles(cliente, simbolo: str, intervalo: str, dias: int) -> pd.DataFrame:
-    """Busca candles históricos da Binance e retorna DataFrame padronizado."""
-    if intervalo == "1h":
-        limit = min(1000, dias * 24)
-    elif intervalo == "4h":
-        limit = min(1000, dias * 6 + 50)
-    else:
-        limit = 1000
-
-    candles = cliente.get_klines(symbol=simbolo, interval=intervalo, limit=limit)
+def _normalizar_df_candles(candles: list) -> pd.DataFrame:
+    """Converte lista raw de klines da Binance em DataFrame padronizado."""
+    if not candles:
+        return pd.DataFrame()
     df = pd.DataFrame(candles)
     df.columns = [
         "tempo_abertura", "abertura", "maxima", "minima", "fechamento", "volume",
@@ -63,6 +57,37 @@ def buscar_candles(cliente, simbolo: str, intervalo: str, dias: int) -> pd.DataF
     for col in ("maxima", "minima", "fechamento", "volume"):
         df[col] = df[col].astype(float)
     return df[["tempo_fechamento", "maxima", "minima", "fechamento", "volume"]].reset_index(drop=True)
+
+
+def buscar_candles(cliente, simbolo: str, intervalo: str, dias: int) -> pd.DataFrame:
+    """Busca os últimos N dias de candles (limite: ~41 dias para 1h)."""
+    if intervalo == "1h":
+        limit = min(1000, dias * 24)
+    elif intervalo == "4h":
+        limit = min(1000, dias * 6 + 50)
+    else:
+        limit = 1000
+    candles = cliente.get_klines(symbol=simbolo, interval=intervalo, limit=limit)
+    return _normalizar_df_candles(candles)
+
+
+def buscar_candles_periodo(
+    cliente,
+    simbolo: str,
+    intervalo: str,
+    inicio: str,
+    fim: str,
+) -> pd.DataFrame:
+    """Busca candles históricos entre duas datas com paginação automática.
+
+    Args:
+        inicio: "YYYY-MM-DD" ou "YYYY-MM-DD HH:MM:SS" (horário de Brasília)
+        fim:    "YYYY-MM-DD" ou "YYYY-MM-DD HH:MM:SS" (horário de Brasília)
+
+    Usa get_historical_klines que pagina automaticamente — sem limite de candles.
+    """
+    candles = cliente.get_historical_klines(simbolo, intervalo, inicio, fim)
+    return _normalizar_df_candles(candles)
 
 
 def _btc_janela_ate(dados_btc: pd.DataFrame, timestamp: pd.Timestamp) -> pd.DataFrame:

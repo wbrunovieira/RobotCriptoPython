@@ -28,6 +28,7 @@ load_dotenv()
 from infra.binance_client import criar_cliente_sincronizado
 from analysis.backtest_real import (
     buscar_candles,
+    buscar_candles_periodo,
     simular_par,
     calcular_metricas,
     ConfigBacktest,
@@ -107,6 +108,42 @@ def imprimir_comparativo(m_com: dict, m_sem: dict) -> None:
     print()
 
 
+def imprimir_comparativo_padroes(m_a: dict, m_b: dict) -> None:
+    """Comparativo: A) estratégia atual  vs  B) estratégia + padrões gráficos."""
+    sep = "═" * 62
+    print(f"\n{sep}")
+    print(f"  COMPARATIVO — Estratégia atual  vs  + Padrões gráficos")
+    print(f"  Par: {m_a['simbolo']}")
+    print(sep)
+    print(f"  {'Métrica':<30} {'A: atual':>12} {'B: +padrões':>12}")
+    print(f"  {'─'*30} {'─'*12} {'─'*12}")
+
+    campos = [
+        ("Retorno (%)",        "retorno_pct",        lambda v: f"{v:+.2f}%"),
+        ("Capital final (R$)", "capital_final",       lambda v: f"R${v:.2f}"),
+        ("Operações",          "total_operacoes",     str),
+        ("Acerto (%)",         "taxa_acerto_pct",     lambda v: f"{v}%"),
+        ("Lucro total (R$)",   "lucro_total_brl",     lambda v: f"R${v:+.2f}"),
+        ("Drawdown máx (%)",   "drawdown_maximo_pct", lambda v: f"{v}%"),
+    ]
+    for label, key, fmt in campos:
+        print(f"  {label:<30} {fmt(m_a[key]):>12} {fmt(m_b[key]):>12}")
+
+    print(f"  {'─'*30} {'─'*12} {'─'*12}")
+    print(f"  {'Entradas via padrão':<30} {'—':>12} {m_b['entradas_por_padrao']:>12}")
+    print(f"  {'Lucro entradas padrão (R$)':<30} {'—':>12} {m_b['lucro_entradas_padrao']:>+12.2f}")
+
+    diff = m_b["capital_final"] - m_a["capital_final"]
+    print(f"\n  Impacto dos padrões: {'+' if diff >= 0 else ''}R$ {diff:.2f}")
+    if diff > 0:
+        print("  → Padrões MELHORARAM o resultado.")
+    elif diff < 0:
+        print("  → Padrões PIORARAM o resultado (entradas ruins).")
+    else:
+        print("  → Padrões não alteraram o resultado.")
+    print()
+
+
 def imprimir_resumo_geral(resultados: list[dict]) -> None:
     sep = "═" * 52
     print(f"\n{sep}")
@@ -129,7 +166,24 @@ def imprimir_resumo_geral(resultados: list[dict]) -> None:
 
 # ─── Runner principal ────────────────────────────────────────────────────────
 
-def run(pares: list[str], dias: int, comparar: bool, filtro_btc: bool, salvar: str | None) -> None:
+def _buscar_dados(cliente, simbolo: str, intervalo: str, dias: int,
+                  inicio: str | None, fim: str | None) -> pd.DataFrame:
+    """Escolhe entre busca por dias recentes ou por período histórico."""
+    if inicio and fim:
+        return buscar_candles_periodo(cliente, simbolo, intervalo, inicio, fim)
+    return buscar_candles(cliente, simbolo, intervalo, dias)
+
+
+def run(
+    pares: list[str],
+    dias: int,
+    comparar_btc: bool,
+    comparar_padroes: bool,
+    filtro_btc: bool,
+    salvar: str | None,
+    inicio: str | None,
+    fim: str | None,
+) -> None:
     api_key = os.getenv("KEY_BINANCE")
     secret_key = os.getenv("SECRET_BINANCE")
     if not api_key or not secret_key:
@@ -137,9 +191,10 @@ def run(pares: list[str], dias: int, comparar: bool, filtro_btc: bool, salvar: s
         sys.exit(1)
 
     cliente = criar_cliente_sincronizado(api_key, secret_key)
+    periodo_label = f"{inicio} → {fim}" if inicio and fim else f"{dias} dias"
 
-    print(f"\nBuscando BTCBRL 4h ({dias} dias)...")
-    dados_btc = buscar_candles(cliente, SIMBOLO_BTC, INTERVALO_BTC, dias)
+    print(f"\nBuscando BTCBRL 4h ({periodo_label})...")
+    dados_btc = _buscar_dados(cliente, SIMBOLO_BTC, INTERVALO_BTC, dias, inicio, fim)
     print(f"  {len(dados_btc)} candles BTC obtidos.")
 
     if salvar:
@@ -148,11 +203,11 @@ def run(pares: list[str], dias: int, comparar: bool, filtro_btc: bool, salvar: s
         dados_btc.to_json(btc_path, orient="records", date_format="iso")
         print(f"  BTC salvo em {btc_path}")
 
-    todos_resultados_com = []
+    todos_resultados = []
 
     for simbolo in pares:
-        print(f"\nBuscando {simbolo} 1h ({dias} dias)...")
-        dados = buscar_candles(cliente, simbolo, INTERVALO_PAR, dias)
+        print(f"\nBuscando {simbolo} 1h ({periodo_label})...")
+        dados = _buscar_dados(cliente, simbolo, INTERVALO_PAR, dias, inicio, fim)
         print(f"  {len(dados)} candles obtidos.")
 
         if salvar:
@@ -160,21 +215,31 @@ def run(pares: list[str], dias: int, comparar: bool, filtro_btc: bool, salvar: s
             dados.to_json(par_path, orient="records", date_format="iso")
             print(f"  {simbolo} salvo em {par_path}")
 
-        cfg_com = ConfigBacktest(filtro_btc=True)
-        resultado_com = simular_par(simbolo, dados, dados_btc, cfg_com)
-        m_com = calcular_metricas(resultado_com)
-        todos_resultados_com.append(m_com)
+        cfg_a = ConfigBacktest(filtro_btc=filtro_btc, usar_padroes=False)
+        m_a = calcular_metricas(simular_par(simbolo, dados, dados_btc, cfg_a))
+        todos_resultados.append(m_a)
 
-        if comparar:
-            cfg_sem = ConfigBacktest(filtro_btc=False)
-            resultado_sem = simular_par(simbolo, dados, dados_btc, cfg_sem)
-            m_sem = calcular_metricas(resultado_sem)
-            imprimir_comparativo(m_com, m_sem)
+        if comparar_btc:
+            cfg_sem_btc = ConfigBacktest(filtro_btc=False, usar_padroes=False)
+            m_sem_btc = calcular_metricas(simular_par(simbolo, dados, dados_btc, cfg_sem_btc))
+            imprimir_comparativo(m_a, m_sem_btc)
+        elif comparar_padroes:
+            cfg_b = ConfigBacktest(filtro_btc=filtro_btc, usar_padroes=True)
+            m_b = calcular_metricas(simular_par(simbolo, dados, dados_btc, cfg_b))
+            imprimir_comparativo_padroes(m_a, m_b)
         else:
-            imprimir_metricas(m_com, titulo=f"{'COM' if filtro_btc else 'SEM'} filtro BTC")
+            imprimir_metricas(m_a)
 
-    if len(pares) > 1:
-        imprimir_resumo_geral(todos_resultados_com)
+    if len(pares) > 1 and not (comparar_btc or comparar_padroes):
+        imprimir_resumo_geral(todos_resultados)
+    elif len(pares) > 1:
+        # Resumo consolidado para comparativos
+        ci = sum(m["capital_inicial"] for m in todos_resultados)
+        cf = sum(m["capital_final"] for m in todos_resultados)
+        ops = sum(m["total_operacoes"] for m in todos_resultados)
+        ret = (cf - ci) / ci * 100
+        print(f"\n  ─── CONSOLIDADO {periodo_label} ───")
+        print(f"  Capital final: R${cf:.2f} | Retorno: {ret:+.2f}% | Ops: {ops}")
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────
@@ -183,33 +248,36 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Backtesting com dados reais da Binance — estratégia BRL"
     )
-    parser.add_argument(
-        "--par", default=None,
-        help="Par específico (ex: SOLBRL). Padrão: todos os 5 pares BRL."
-    )
-    parser.add_argument(
-        "--dias", type=int, default=30,
-        help="Quantos dias de histórico buscar (padrão: 30)."
-    )
-    parser.add_argument(
-        "--sem-filtro-btc", action="store_true",
-        help="Desativa o filtro BTC MA50 4h."
-    )
-    parser.add_argument(
-        "--comparar", action="store_true",
-        help="Roda COM e SEM filtro BTC e exibe comparativo lado a lado."
-    )
-    parser.add_argument(
-        "--salvar", default=None, metavar="DIR",
-        help="Salva os candles em JSON no diretório informado (para testes E2E)."
-    )
+    parser.add_argument("--par", default=None,
+        help="Par específico (ex: SOLBRL). Padrão: todos os 5 pares BRL.")
+    parser.add_argument("--dias", type=int, default=30,
+        help="Dias de histórico recente (padrão: 30). Ignorado se --inicio/--fim.")
+    parser.add_argument("--inicio", default=None, metavar="YYYY-MM-DD",
+        help="Data de início do período histórico (ex: 2023-10-01).")
+    parser.add_argument("--fim", default=None, metavar="YYYY-MM-DD",
+        help="Data de fim do período histórico (ex: 2024-01-31).")
+    parser.add_argument("--sem-filtro-btc", action="store_true",
+        help="Desativa o filtro BTC MA50 4h.")
+    parser.add_argument("--comparar", action="store_true",
+        help="COM vs SEM filtro BTC.")
+    parser.add_argument("--comparar-padroes", action="store_true",
+        help="Estratégia atual vs estratégia + padrões gráficos.")
+    parser.add_argument("--salvar", default=None, metavar="DIR",
+        help="Salva candles em JSON para testes E2E.")
     args = parser.parse_args()
 
     pares = [args.par] if args.par else PARES_BRL
     filtro_btc = not args.sem_filtro_btc
 
-    print(f"Backtesting — {', '.join(pares)} | {args.dias} dias | filtro_btc={filtro_btc}")
-    run(pares, args.dias, args.comparar, filtro_btc, args.salvar)
+    periodo = f"{args.inicio} → {args.fim}" if args.inicio else f"{args.dias} dias"
+    print(f"Backtesting — {', '.join(pares)} | {periodo} | filtro_btc={filtro_btc}")
+
+    run(
+        pares=pares, dias=args.dias,
+        comparar_btc=args.comparar, comparar_padroes=args.comparar_padroes,
+        filtro_btc=filtro_btc, salvar=args.salvar,
+        inicio=args.inicio, fim=args.fim,
+    )
 
 
 if __name__ == "__main__":
