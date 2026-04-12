@@ -20,6 +20,7 @@ import MemePosicaoCard from "@/components/MemePosicaoCard";
 import MemeScannerTabela from "@/components/MemeScannerTabela";
 import StatsResumo from "@/components/StatsResumo";
 import TabelaOperacoes from "@/components/TabelaOperacoes";
+import GraficoEvolucaoMeme from "@/components/GraficoEvolucaoMeme";
 
 export default function MemePage() {
   const router = useRouter();
@@ -97,6 +98,11 @@ export default function MemePage() {
       </header>
 
       <main className="max-w-6xl mx-auto p-4 space-y-6">
+
+        {/* Evolução do Portfolio */}
+        <section>
+          <GraficoEvolucaoMeme />
+        </section>
 
         {/* Posição atual */}
         <section>

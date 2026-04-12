@@ -341,6 +341,159 @@ def bot_logs(linhas: int = Query(default=100)):
     return {"linhas": [linha.rstrip("\n") for linha in todas[-linhas:]]}
 
 
+@router.get("/evolucao", dependencies=[Depends(_verificar_token)])
+def get_evolucao():
+    """Retorna a evolução diária do portfolio meme: USDT + posição aberta."""
+    from datetime import date as _date
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(_ROOT, ".env"))
+    from binance import Client as BinanceClient
+
+    if not os.path.exists(_MEME_STATS_DIR):
+        return {"capital_inicial": 0, "pontos": []}
+
+    arquivos = sorted(
+        f for f in os.listdir(_MEME_STATS_DIR)
+        if f.endswith(".json") and f not in ("aportes.json", "reserva_meme.json") and len(f) == 15
+    )
+    if not arquivos:
+        return {"capital_inicial": 0, "pontos": []}
+
+    posicoes: dict = {}
+    pontos = []
+
+    for filename in arquivos:
+        data_str = filename[:-5]
+        with open(os.path.join(_MEME_STATS_DIR, filename)) as f:
+            stats = json.load(f)
+
+        # saldo_inicial_brl stores USDT value for meme bot
+        saldo_usdt = stats.get("saldo_inicial_brl", 0.0)
+        custo_posicoes = sum(p["custo_total"] for p in posicoes.values())
+        valor_dia = round(saldo_usdt + custo_posicoes, 6)
+
+        pontos.append({"data": data_str, "valor_usdt": valor_dia, "a_mercado": False})
+
+        for op in stats.get("operacoes", []):
+            par = op.get("par") or op.get("simbolo", "")
+            if not par:
+                continue
+            if op["tipo"] == "COMPRA":
+                if par not in posicoes:
+                    posicoes[par] = {"quantidade": 0.0, "custo_total": 0.0}
+                posicoes[par]["quantidade"] += float(op["quantidade"])
+                posicoes[par]["custo_total"] += float(op["total_brl"])
+            elif op["tipo"] == "VENDA" and par in posicoes:
+                pos = posicoes[par]
+                if pos["quantidade"] > 0:
+                    frac = min(float(op["quantidade"]) / pos["quantidade"], 1.0)
+                    pos["custo_total"] -= pos["custo_total"] * frac
+                    pos["quantidade"] -= float(op["quantidade"])
+                    if pos["quantidade"] < 0.0001:
+                        del posicoes[par]
+
+    hoje = _date.today().strftime("%Y-%m-%d")
+    saldo_usdt_atual = 0.0
+    try:
+        api_key = os.getenv("KEY_BINANCE", "")
+        api_secret = os.getenv("SECRET_BINANCE", "")
+        cliente = BinanceClient(api_key, api_secret)
+
+        conta = cliente.get_account()
+        saldo_usdt_atual = next(
+            (float(b["free"]) + float(b["locked"])
+             for b in conta["balances"] if b["asset"] == "USDT"), 0.0
+        )
+
+        valor_posicoes_mercado = 0.0
+        for par, pos in posicoes.items():
+            if pos["quantidade"] > 0:
+                try:
+                    preco = float(cliente.get_symbol_ticker(symbol=par)["price"])
+                    valor_posicoes_mercado += pos["quantidade"] * preco
+                except Exception:
+                    valor_posicoes_mercado += pos["custo_total"]
+
+        valor_mercado = round(saldo_usdt_atual + valor_posicoes_mercado, 6)
+
+        if pontos and pontos[-1]["data"] == hoje:
+            pontos[-1]["valor_usdt"] = valor_mercado
+            pontos[-1]["a_mercado"] = True
+        else:
+            pontos.append({"data": hoje, "valor_usdt": valor_mercado, "a_mercado": True})
+    except Exception:
+        pass
+
+    dados_aportes = _carregar_dados_aportes_meme()
+    aportes = sorted(dados_aportes.get("confirmados", []), key=lambda a: a.get("data", ""))
+    total_investido = 0.0
+    aporte_idx = 0
+
+    for p in pontos:
+        while aporte_idx < len(aportes) and aportes[aporte_idx]["data"] <= p["data"]:
+            total_investido += float(aportes[aporte_idx].get("valor_usdt", 0))
+            aporte_idx += 1
+        p["capital_acumulado"] = round(total_investido, 6)
+
+    if not aportes:
+        capital_base = pontos[0]["valor_usdt"] if pontos else 0.0
+        for p in pontos:
+            p["capital_acumulado"] = round(capital_base, 6)
+
+    aportes_por_dia: dict = {}
+    for a in aportes:
+        d = a["data"]
+        aportes_por_dia[d] = round(aportes_por_dia.get(d, 0.0) + float(a.get("valor_usdt", 0)), 6)
+
+    for p in pontos:
+        if p.get("a_mercado"):
+            continue
+        aportes_dia = aportes_por_dia.get(p["data"], 0.0)
+        if aportes_dia > 0:
+            cap = p["capital_acumulado"]
+            ajustado = max(p["valor_usdt"], min(cap, round(p["valor_usdt"] + aportes_dia, 6)))
+            p["valor_usdt"] = ajustado
+
+    total_investido_final = (
+        sum(float(a.get("valor_usdt", 0)) for a in aportes)
+        if aportes else (pontos[0]["valor_usdt"] if pontos else 0.0)
+    )
+
+    for p in pontos:
+        base = p["capital_acumulado"]
+        p["variacao_usdt"] = round(p["valor_usdt"] - base, 6)
+        p["variacao_pct"] = round((p["valor_usdt"] / base - 1) * 100, 2) if base else 0.0
+
+    lucro_realizado_usdt = 0.0
+    for filename in arquivos:
+        with open(os.path.join(_MEME_STATS_DIR, filename)) as f:
+            stats_item = json.load(f)
+        for op in stats_item.get("operacoes", []):
+            if op["tipo"] == "VENDA":
+                lucro_realizado_usdt += float(op.get("lucro_brl", 0.0))
+    lucro_realizado_usdt = round(lucro_realizado_usdt, 6)
+
+    pnl_aberto_usdt = 0.0
+    if pontos:
+        ultimo_ponto = pontos[-1]
+        if ultimo_ponto.get("a_mercado"):
+            custo_posicoes_abertas = sum(p["custo_total"] for p in posicoes.values())
+            try:
+                pnl_aberto_usdt = round(
+                    ultimo_ponto["valor_usdt"] - (saldo_usdt_atual + custo_posicoes_abertas), 6
+                )
+            except Exception:
+                pnl_aberto_usdt = 0.0
+
+    return {
+        "capital_inicial": round(total_investido_final, 6),
+        "total_investido": round(total_investido_final, 6),
+        "lucro_realizado_usdt": lucro_realizado_usdt,
+        "pnl_aberto_usdt": pnl_aberto_usdt,
+        "pontos": pontos,
+    }
+
+
 @router.get("/bot/logs/stream")
 async def bot_logs_stream(token: str = Query(...), historico: int = Query(default=100)):
     """SSE endpoint — token via query param."""

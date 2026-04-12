@@ -26,3 +26,8 @@ app.include_router(brl_router)
 app.include_router(aportes_router)
 app.include_router(fiscal_router)
 app.include_router(meme_router)
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("API_PORT", "8000"))
+    uvicorn.run("api.main:app", host="0.0.0.0", port=port, reload=False)

@@ -337,3 +337,32 @@ export function memeBotLogsStreamUrl(historico = 200): string {
   const token = getToken();
   return `${API_URL}/meme/bot/logs/stream?token=${encodeURIComponent(token)}&historico=${historico}`;
 }
+
+export interface PontoMeme {
+  data: string;
+  valor_usdt: number;
+  capital_acumulado: number;
+  variacao_usdt: number;
+  variacao_pct: number;
+  a_mercado: boolean;
+}
+
+export interface EvolucaoMeme {
+  capital_inicial: number;
+  total_investido: number;
+  lucro_realizado_usdt: number;
+  pnl_aberto_usdt: number;
+  pontos: PontoMeme[];
+}
+
+export const fetchEvolucaoMeme = () => apiFetch<EvolucaoMeme>("/meme/evolucao");
+
+export const atualizarDataMemeAporte = (a: MemeAporte, nova_data: string) =>
+  apiFetch<{ ok: boolean }>("/meme/aporte", {
+    method: "PATCH",
+    body: JSON.stringify({
+      data_antiga: a.data,
+      valor_usdt: a.valor_usdt,
+      nova_data,
+    }),
+  });
