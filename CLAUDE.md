@@ -2,11 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Running the Bot
+## Running the Services
+
+Three independent processes — each needs `source venv/bin/activate` first.
 
 ```bash
-source venv/bin/activate
-python robo_cripto.py
+python robo_cripto.py          # BRL bot (real orders on Binance)
+python robo_meme.py            # Meme bot (USDT pairs, real orders)
+uvicorn api.main:app --host 0.0.0.0 --port 8000   # REST API
+```
+
+Frontend (Node.js/pnpm):
+```bash
+cd frontend && pnpm dev        # dashboard at http://localhost:3000
 ```
 
 Requires a `.env` file with:
@@ -20,11 +28,12 @@ API_TOKEN=<api_token>
 
 ```bash
 source venv/bin/activate
-python -m pytest tests/ -q           # all tests
+python -m pytest tests/ -q           # all tests (unit only)
 python -m pytest tests/test_foo.py   # single file
+python -m pytest -m e2e              # E2E tests — require real Binance credentials
 ```
 
-239 tests — must all pass before any merge.
+All non-E2E tests must pass before any merge. E2E tests (`tests/e2e/`) hit the real Binance API and require valid `.env` credentials; they are skipped in CI unless explicitly marked.
 
 ## Architecture
 
@@ -35,6 +44,7 @@ core/           — Pure domain logic (no I/O, 100% testable)
   indicadores.py    RSI, ATR, ADX calculations
   risco.py          stop-loss, trailing stop, take-profit, break-even
   sinais.py         MA crossover + RSI reversal signal evaluation
+  padroes.py        chart pattern detection (falling wedge, bull flag) — pre-crossover entry signals
 
 infra/          — All I/O and external services
   binance_client.py   Binance API client (sync clock)
@@ -42,6 +52,7 @@ infra/          — All I/O and external services
   stats_store.py      daily trade stats JSON files
   reserva_store.py    USDC reserve + P&L tracking
   notificacao.py      WhatsApp via Evolution API
+  fiscal.py           fiscal/tax helpers (monthly stats, CSV export)
 
 pares/          — Trading pair universe
   brl.py            BRL pairs list (SOL/BTC/ETH/XRP/BNB)
@@ -51,31 +62,44 @@ bots/brl/       — BRL bot orchestration
   config.py         env-var config constants
   robo.py           full bot logic (ciclo, executar_compra, executar_venda, etc.)
 
+bots/meme/      — Meme-coin bot (USDT) orchestration
+  config.py         env-var config constants + MEME_UNIVERSE coin list
+  scanner.py        ranks coins by momentum score (scan_melhor / scan_todos)
+  estrategia.py     avaliar_sinal_meme + calcular_stop_inicial
+  robo.py           full bot logic (mirrors brl/robo.py structure)
+
 api/            — FastAPI REST API
   main.py           thin app entry + router registration
   deps.py           shared helpers and auth dependency
   rotas/
-    brl.py          trading routes (status, posicoes, stats, saldos, bot control)
+    brl.py          BRL trading routes (status, posicoes, stats, saldos, bot control)
+    meme.py         Meme bot routes (mirrors brl.py)
     aportes.py      portfolio/aporte CRUD
     fiscal.py       fiscal CSV export + monthly stats
 
 analysis/       — Offline tools (not used in production)
-  backtesting.py
+  backtesting.py      simulation backtesting
+  backtest_real.py    real-data backtesting (buscar_candles_periodo)
+  backtest_runner.py  CLI: --dias, --par, --comparar, --salvar fixtures/
   otimizador.py
 ```
 
 **Backward-compat wrappers** (kept for `from X import Y` compatibility):
 `estrategia.py`, `persistencia.py`, `conexao.py`, `notificacao.py`, `stats.py`, `reserva.py` — all thin re-exports from their `core/` or `infra/` counterparts.
 
-**Entry point**: `robo_cripto.py` → `bots/brl/robo.py` → runs the infinite loop.
+**Entry points**: `robo_cripto.py` → `bots/brl/robo.py`; `robo_meme.py` → `bots/meme/robo.py` — both run infinite loops.
 
-**Position state**: persisted to `posicao_{SIMBOLO}.json` per pair (survives restarts).
+**Position state**: BRL bot persists to `posicao_{SIMBOLO}.json` (root); Meme bot to `posicoes/posicao_meme.json`. Stats directories: `stats/` (BRL) and `stats_meme/` (Meme).
 
-**Strategy**: MA9/MA21 crossover + RSI reversal, with ADX filter, ATR-based trailing stop, break-even, take-profit, weekend volume filter, daily loss limit, portfolio stop.
+**BRL strategy**: MA9/MA21 crossover + RSI reversal, ADX filter, ATR-based trailing stop, break-even, take-profit, weekend volume filter, daily loss limit, portfolio stop.
 
-**Multi-pair**: SOL/BTC/ETH/XRP/BNB all in BRL; up to `MAX_POSICOES` concurrent positions; each pair limited to `TETO_SALDO_PCT` (60%) of available BRL.
+**Meme strategy**: Scanner scores coins (MA sep, RSI range, ADX, volume spike) → `SCORE_MINIMO` threshold → enter with ATR-based stop; max 1 concurrent position (`MAX_POSICOES=1`).
+
+**Multi-pair (BRL)**: SOL/BTC/ETH/XRP/BNB; up to `MAX_POSICOES` concurrent positions; each pair limited to `TETO_SALDO_PCT` (60%) of available BRL.
 
 ## Key Config (env vars)
+
+**BRL bot** (`BOT_*`):
 
 | Var | Default | Meaning |
 |-----|---------|---------|
@@ -85,6 +109,20 @@ analysis/       — Offline tools (not used in production)
 | `BOT_MAX_POSICOES` | 3 | Max concurrent positions |
 | `BOT_INTERVALO_MONITORAMENTO` | 60 | Stop-check interval (s) |
 | `BOT_INTERVALO_ESTRATEGIA_MIN` | 15 | Strategy cycle interval (min) |
+
+**Meme bot** (`MEME_*`):
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `MEME_CAPITAL_USDT` | 100.0 | Total USDT capital |
+| `MEME_TAKE_PROFIT_PCT` | 0.05 | Take-profit target |
+| `MEME_STOP_PCT_MIN` | 0.03 | Minimum stop % |
+| `MEME_ATR_MULT` | 3.5 | ATR multiplier for stop |
+| `MEME_SCORE_MINIMO` | 7 | Min scanner score to enter |
+| `MEME_STOP_PORTFOLIO_PCT` | 0.08 | Portfolio stop loss % |
+| `MEME_LIMITE_DIARIO_PCT` | 0.05 | Daily loss limit % |
+| `MEME_INTERVALO_S` | 900 | Scanner cycle interval (s) |
+| `MEME_BOT_ID` | MemeCoin1 | Bot identifier |
 
 ## Dependencies
 

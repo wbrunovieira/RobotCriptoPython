@@ -44,6 +44,8 @@ from bots.meme.config import (
     SCORE_MINIMO,
     STOP_PORTFOLIO_PCT,
     LIMITE_DIARIO_PCT,
+    MINIMO_RESERVA_USDT,
+    PERCENTUAL_RESERVA,
     MAX_POSICOES,
     MAX_TENTATIVAS,
     POSICAO_FILE,
@@ -140,34 +142,32 @@ def _saldo_para_bot(saldo_usdt: float) -> float:
     """Limita o saldo USDT disponível para o bot ao capital autorizado.
 
     Regra:
-    1. Total de aportes confirmados em USDT
-    2. Capital máximo = min(CAPITAL_USDT, total_aportes_usdt)
-    3. Disponível = capital_max - capital_em_posicao
-    4. Retorna min(saldo_real, disponivel)
+    1. Capital máximo = min(CAPITAL_USDT, total_aportes) - reserva_isolada
+    2. Retorna min(saldo_real, capital_max)
     """
     total_aportes = _aportes_confirmados_usdt()
-    capital_max = min(CAPITAL_USDT, total_aportes)
-    # capital_em_posicao não está disponível aqui sem cliente, já aplicado em ciclo
-    disponivel = max(0.0, capital_max)
-    resultado = min(saldo_usdt, disponivel)
+    reserva = _reserva_isolada_usdt()
+    capital_max = max(0.0, min(CAPITAL_USDT, total_aportes) - reserva)
+    resultado = min(saldo_usdt, capital_max)
     if resultado < saldo_usdt:
         logger.info(
-            "[meme][aporte] Saldo USDT: %.2f | Aportes: %.2f | Cap. máx: %.2f | Disponível bot: %.2f",
-            saldo_usdt, total_aportes, capital_max, resultado,
+            "[meme][aporte] USDT: %.2f | Aportes: %.2f | Reserva: %.2f | Cap. bot: %.2f",
+            saldo_usdt, total_aportes, reserva, resultado,
         )
     return resultado
 
 
 def _saldo_para_bot_com_posicao(saldo_usdt: float, capital_em_pos: float) -> float:
-    """Versão completa que desconta capital já em posição."""
+    """Versão completa que desconta capital já em posição e reserva isolada."""
     total_aportes = _aportes_confirmados_usdt()
-    capital_max = min(CAPITAL_USDT, total_aportes)
+    reserva = _reserva_isolada_usdt()
+    capital_max = max(0.0, min(CAPITAL_USDT, total_aportes) - reserva)
     disponivel = max(0.0, capital_max - capital_em_pos)
     resultado = min(saldo_usdt, disponivel)
     if resultado < saldo_usdt:
         logger.info(
-            "[meme][aporte] USDT: %.2f | Aportes: %.2f | Cap.max: %.2f | Em posição: %.2f | Bot: %.2f",
-            saldo_usdt, total_aportes, capital_max, capital_em_pos, resultado,
+            "[meme][aporte] USDT: %.2f | Aportes: %.2f | Reserva: %.2f | Em pos: %.2f | Bot: %.2f",
+            saldo_usdt, total_aportes, reserva, capital_em_pos, resultado,
         )
     return resultado
 
@@ -176,9 +176,18 @@ def _saldo_para_bot_com_posicao(saldo_usdt: float, capital_em_pos: float) -> flo
 
 def _carregar_reserva() -> dict:
     if not os.path.exists(RESERVA_FILE):
-        return {"pnl_total_usdt": 0.0, "entradas": []}
-    with open(RESERVA_FILE) as f:
-        return json.load(f)
+        return {
+            "pnl_liquido_pendente_usdt": 0.0,
+            "reserva_isolada_usdt": 0.0,
+            "capital_reinvestido_usdt": 0.0,
+            "historico": [],
+        }
+    dados = json.load(open(RESERVA_FILE))
+    dados.setdefault("pnl_liquido_pendente_usdt", 0.0)
+    dados.setdefault("reserva_isolada_usdt", 0.0)
+    dados.setdefault("capital_reinvestido_usdt", 0.0)
+    dados.setdefault("historico", [])
+    return dados
 
 
 def _salvar_reserva(dados: dict) -> None:
@@ -194,27 +203,71 @@ def _salvar_reserva(dados: dict) -> None:
         raise
 
 
-def _registrar_lucro_reserva(lucro_usdt: float, timestamp: str) -> None:
-    """Registra lucro na reserva e adiciona aporte se positivo."""
-    if lucro_usdt <= 0:
-        return
+def _reserva_isolada_usdt() -> float:
+    """Retorna o valor USDT isolado em reserva (não disponível para trading)."""
+    return _carregar_reserva().get("reserva_isolada_usdt", 0.0)
+
+
+def _verificar_reserva_usdt(lucro_usdt: float, saldo_pos_venda: float, timestamp: str) -> None:
+    """Acumula P&L e, quando condições atingidas, isola 50% em reserva e reinveste 50%.
+
+    Condições para o split:
+    1. Portfolio atual (saldo_pos_venda) >= total investido (aportes confirmados)
+    2. P&L líquido acumulado >= MINIMO_RESERVA_USDT
+    """
     reserva = _carregar_reserva()
-    reserva["pnl_total_usdt"] = round(reserva.get("pnl_total_usdt", 0.0) + lucro_usdt, 6)
-    entradas = reserva.get("entradas", [])
-    entradas.append({"timestamp": timestamp, "lucro_usdt": round(lucro_usdt, 6)})
-    reserva["entradas"] = entradas
+    reserva["pnl_liquido_pendente_usdt"] = round(
+        reserva["pnl_liquido_pendente_usdt"] + lucro_usdt, 6
+    )
     _salvar_reserva(reserva)
 
-    # Adicionar como lucro_reinvestido nos aportes
+    pnl = reserva["pnl_liquido_pendente_usdt"]
+    total_investido = _aportes_confirmados_usdt()
+
+    if pnl < MINIMO_RESERVA_USDT:
+        logger.info("[meme][reserva] P&L pendente: $%.4f (aguardando mínimo de $%.2f)", pnl, MINIMO_RESERVA_USDT)
+        return
+
+    if saldo_pos_venda < total_investido:
+        logger.info(
+            "[meme][reserva] Portfolio $%.2f < investido $%.2f (aguardando recuperação)",
+            saldo_pos_venda, total_investido,
+        )
+        return
+
+    # Ambas as condições atendidas — split 50/50
+    reserva_split = round(pnl * PERCENTUAL_RESERVA, 6)
+    reinvest_split = round(pnl - reserva_split, 6)
+
+    reserva["pnl_liquido_pendente_usdt"] = 0.0
+    reserva["reserva_isolada_usdt"] = round(reserva["reserva_isolada_usdt"] + reserva_split, 6)
+    reserva["capital_reinvestido_usdt"] = round(reserva["capital_reinvestido_usdt"] + reinvest_split, 6)
+    reserva["historico"].append({
+        "timestamp": timestamp,
+        "pnl_processado": round(pnl, 6),
+        "reserva_usdt": reserva_split,
+        "reinvestido_usdt": reinvest_split,
+    })
+    _salvar_reserva(reserva)
+
     data_str = timestamp[:10]
     dados_aportes = _carregar_dados_aportes()
     dados_aportes["confirmados"].append({
         "data": data_str,
-        "valor_usdt": round(lucro_usdt, 6),
+        "valor_usdt": reinvest_split,
         "fonte": "lucro_reinvestido",
     })
     _salvar_dados_aportes(dados_aportes)
-    logger.info("[meme][reserva] Lucro reinvestido: +$%.4f USDT em %s", lucro_usdt, data_str)
+
+    msg = (
+        f"LUCRO PROCESSADO [Meme Bot]\n"
+        f"P&L processado: ${pnl:.4f} USDT\n"
+        f"→ Reserva isolada: +${reserva_split:.4f} USDT\n"
+        f"→ Reinvestido: +${reinvest_split:.4f} USDT\n"
+        f"Reserva total: ${reserva['reserva_isolada_usdt']:.4f} USDT"
+    )
+    logger.info(msg)
+    enviar_whatsapp(msg)
 
 
 # ─── Saldo e dados ──────────────────────────────────────────────────────────
@@ -477,10 +530,16 @@ def executar_venda(cliente, motivo: str = "Sinal de venda") -> bool:
     try:
         step_size, min_qty = _obter_lot_size(cliente, simbolo)
         saldo_ativo = obter_saldo_ativo(cliente, ativo)
+        logger.info("[meme][venda] Saldo %s disponível: %.8f (registrado: %.8f)", ativo, saldo_ativo, quantidade_original)
         quantidade_str, quantidade_fmt = _formatar_quantidade(saldo_ativo, step_size)
 
         if quantidade_fmt <= 0 or quantidade_fmt < min_qty:
-            logger.warning("[meme][venda] Saldo de %s insuficiente (%.8f).", ativo, saldo_ativo)
+            logger.warning(
+                "[meme][venda] Saldo %s zerado ou abaixo do mínimo (%.8f). "
+                "Posição dessincronizada — limpando estado.",
+                ativo, saldo_ativo,
+            )
+            _limpar_posicao()
             return False
 
         preco_atual = obter_preco_atual(cliente, simbolo)
@@ -507,24 +566,7 @@ def executar_venda(cliente, motivo: str = "Sinal de venda") -> bool:
         )
 
         # Limpar posição
-        estado_vazio = {
-            "posicao": False,
-            "preco_entrada": None,
-            "preco_maximo": None,
-            "stop_price": None,
-            "simbolo": None,
-            "quantidade": 0.0,
-        }
-        dir_ = os.path.dirname(POSICAO_FILE) or "."
-        os.makedirs(dir_, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=dir_, prefix=".tmp_")
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(estado_vazio, f)
-            os.replace(tmp, POSICAO_FILE)
-        except Exception:
-            os.unlink(tmp)
-            raise
+        _limpar_posicao()
 
         lucro_usdt = total_usdt - (preco_entrada * quantidade_fmt) if preco_entrada else 0.0
         variacao_pct = ((preco_atual / preco_entrada) - 1) * 100 if preco_entrada else 0.0
@@ -539,18 +581,47 @@ def executar_venda(cliente, motivo: str = "Sinal de venda") -> bool:
         logger.info(msg)
         enviar_whatsapp(msg)
 
-        # Reinvestir lucro se positivo
-        if lucro_usdt > 0:
-            _registrar_lucro_reserva(lucro_usdt, timestamp)
+        saldo_pos_venda = obter_saldo_usdt(cliente)
+        _verificar_reserva_usdt(lucro_usdt, saldo_pos_venda, timestamp)
 
         return True
 
     except Exception as e:
+        err_str = str(e)
         logger.error("[meme][venda] Erro ao executar venda: %s", e)
+        # -2010: saldo insuficiente — provavelmente posição dessincronizada (ativo já foi vendido)
+        if "-2010" in err_str:
+            logger.warning(
+                "[meme][venda] Saldo insuficiente na Binance (-2010). "
+                "Posição dessincronizada — limpando estado para evitar loop de tentativas."
+            )
+            _limpar_posicao()
         return False
 
 
 # ─── Posição ─────────────────────────────────────────────────────────────────
+
+def _limpar_posicao() -> None:
+    """Zera o estado de posição no arquivo JSON."""
+    estado_vazio = {
+        "posicao": False,
+        "preco_entrada": None,
+        "preco_maximo": None,
+        "stop_price": None,
+        "simbolo": None,
+        "quantidade": 0.0,
+    }
+    dir_ = os.path.dirname(POSICAO_FILE) or "."
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, prefix=".tmp_")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(estado_vazio, f)
+        os.replace(tmp, POSICAO_FILE)
+    except Exception:
+        os.unlink(tmp)
+        raise
+
 
 def _carregar_posicao_meme() -> dict:
     """Carrega posição meme com campos extras (simbolo, quantidade)."""
