@@ -529,9 +529,23 @@ def executar_venda(cliente, motivo: str = "Sinal de venda") -> bool:
 
     try:
         step_size, min_qty = _obter_lot_size(cliente, simbolo)
+
+        # Cancelar ordens abertas do símbolo que possam estar lockando saldo
+        try:
+            ordens_abertas = cliente.get_open_orders(symbol=simbolo)
+            if ordens_abertas:
+                logger.info("[meme][venda] %d ordem(ns) aberta(s) em %s — cancelando antes de vender.", len(ordens_abertas), simbolo)
+                cliente.cancel_order(symbol=simbolo)
+        except Exception as e_cancel:
+            logger.warning("[meme][venda] Falha ao cancelar ordens abertas: %s", e_cancel)
+
         saldo_ativo = obter_saldo_ativo(cliente, ativo)
-        logger.info("[meme][venda] Saldo %s disponível: %.8f (registrado: %.8f)", ativo, saldo_ativo, quantidade_original)
+        logger.info(
+            "[meme][venda] %s — free: %.8f | registrado: %.8f | step_size: %s",
+            ativo, saldo_ativo, quantidade_original, step_size,
+        )
         quantidade_str, quantidade_fmt = _formatar_quantidade(saldo_ativo, step_size)
+        logger.info("[meme][venda] Quantidade a enviar: %s (%.8f)", quantidade_str, quantidade_fmt)
 
         if quantidade_fmt <= 0 or quantidade_fmt < min_qty:
             logger.warning(
