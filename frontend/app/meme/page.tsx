@@ -9,8 +9,10 @@ import {
   fetchMemeStatsDia,
   fetchMemeStatsMes,
   fetchMemeOperacoesMes,
+  fetchMemeReserva,
   MemeStatus,
   MemeScore,
+  MemeReserva,
   Operacao,
   ResumoStats,
 } from "@/lib/api";
@@ -21,6 +23,7 @@ import MemeScannerTabela from "@/components/MemeScannerTabela";
 import StatsResumo from "@/components/StatsResumo";
 import TabelaOperacoes from "@/components/TabelaOperacoes";
 import GraficoEvolucaoMeme from "@/components/GraficoEvolucaoMeme";
+import ReservaLucros from "@/components/ReservaLucros";
 
 export default function MemePage() {
   const router = useRouter();
@@ -67,6 +70,12 @@ export default function MemePage() {
     60000
   );
 
+  const { data: reserva } = usePolling<MemeReserva>(
+    "meme-reserva",
+    fetchMemeReserva,
+    60000
+  );
+
   // Derive precoAtual from scanner scores when in position
   useEffect(() => {
     if (memeStatus?.posicao?.posicao && memeStatus.posicao.simbolo && scannerScores) {
@@ -103,6 +112,26 @@ export default function MemePage() {
         <section>
           <GraficoEvolucaoMeme />
         </section>
+
+        {/* Proteção de Lucros */}
+        {reserva && (
+          <ReservaLucros
+            reserva_label="Reserva isolada USDT"
+            reserva_valor={reserva.reserva_isolada_usdt}
+            reserva_moeda="USDT"
+            reinvestido_valor={reserva.capital_reinvestido_usdt}
+            reinvestido_moeda="USDT"
+            pnl_pendente={reserva.pnl_liquido_pendente_usdt}
+            pnl_moeda="USDT"
+            minimo_conversao={3}
+            historico={reserva.historico.map((e) => ({
+              timestamp: e.timestamp,
+              pnl_processado: e.pnl_processado,
+              valor_reserva: e.reserva_usdt,
+              valor_reinvestido: e.reinvestido_usdt,
+            }))}
+          />
+        )}
 
         {/* Posição atual */}
         <section>

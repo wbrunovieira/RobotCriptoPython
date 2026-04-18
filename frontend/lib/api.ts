@@ -366,3 +366,19 @@ export const atualizarDataMemeAporte = (a: MemeAporte, nova_data: string) =>
       nova_data,
     }),
   });
+
+export interface MemeReservaEntrada {
+  timestamp: string;
+  pnl_processado: number;
+  reserva_usdt: number;
+  reinvestido_usdt: number;
+}
+
+export interface MemeReserva {
+  pnl_liquido_pendente_usdt: number;
+  reserva_isolada_usdt: number;
+  capital_reinvestido_usdt: number;
+  historico: MemeReservaEntrada[];
+}
+
+export const fetchMemeReserva = () => apiFetch<MemeReserva>("/meme/reserva");

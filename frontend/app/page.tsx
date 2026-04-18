@@ -16,6 +16,7 @@ import PainelControle from "@/components/PainelControle";
 import GraficoPerformance from "@/components/GraficoPerformance";
 import GraficoEvolucao from "@/components/GraficoEvolucao";
 import NotificacaoAportes from "@/components/NotificacaoAportes";
+import ReservaLucros, { ReservaEntradaNormalizada } from "@/components/ReservaLucros";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -85,45 +86,23 @@ export default function Dashboard() {
         {saldos && <SaldoTotal saldos={saldos} />}
 
         {reserva && (
-          <section className="bg-gray-900 rounded-xl p-4 grid grid-cols-2 gap-6 sm:grid-cols-4">
-            <div>
-              <p className="text-xs text-gray-400">Reserva USDC</p>
-              <p className="text-xl font-bold font-mono text-blue-400">
-                {reserva.reserva_usdc.toFixed(4)} USDC
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">Capital reinvestido</p>
-              <p className="text-xl font-bold font-mono text-green-400">
-                R$ {(reserva.capital_reinvestido_brl ?? 0).toFixed(2)}
-              </p>
-              <p className="text-xs text-gray-600">adicionado ao capital via lucros</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">P&L líquido pendente</p>
-              {(() => {
-                const pnl = reserva.pnl_liquido_pendente_brl ?? 0;
-                const pos = pnl >= 0;
-                return (
-                  <>
-                    <p className={`text-xl font-bold font-mono ${pnl === 0 ? "text-gray-500" : pos ? "text-yellow-400" : "text-red-400"}`}>
-                      {pnl >= 0 ? "+" : ""}R$ {pnl.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      {pnl < 30 && pnl >= 0 ? `faltam R$ ${(30 - pnl).toFixed(2)} para converter` : pnl >= 30 ? "aguardando portfólio subir" : "acumulando"}
-                    </p>
-                  </>
-                );
-              })()}
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">Histórico conversões</p>
-              <p className="text-xl font-bold font-mono text-gray-300">
-                {reserva.historico_conversoes.length}x
-              </p>
-              <p className="text-xs text-gray-600">operações realizadas</p>
-            </div>
-          </section>
+          <ReservaLucros
+            reserva_label="Reserva USDC"
+            reserva_valor={reserva.reserva_usdc}
+            reserva_moeda="USDC"
+            reinvestido_valor={reserva.capital_reinvestido_brl ?? 0}
+            reinvestido_moeda="BRL"
+            pnl_pendente={reserva.pnl_liquido_pendente_brl ?? 0}
+            pnl_moeda="BRL"
+            minimo_conversao={30}
+            historico={(reserva.historico_conversoes ?? []).map((e): ReservaEntradaNormalizada => ({
+              timestamp: e.timestamp,
+              pnl_processado: (e.valor_usdc_brl ?? e.valor_brl ?? 0) + (e.valor_reinvest_brl ?? 0),
+              valor_reserva: e.valor_usdc_brl ?? e.valor_brl ?? 0,
+              valor_reinvestido: e.valor_reinvest_brl ?? 0,
+              info_extra: e.taxa_cambio ? `câmbio R$ ${e.taxa_cambio.toFixed(2)}` : undefined,
+            }))}
+          />
         )}
 
         <GraficoEvolucao key={evolucaoKey} />

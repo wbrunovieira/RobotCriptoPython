@@ -25,6 +25,7 @@ _MEME_STATUS_FILE = os.path.join(_ROOT, "run", "status_meme.json")
 _MEME_STATS_DIR = os.path.join(_ROOT, "stats_meme")
 _MEME_APORTES_FILE = os.path.join(_ROOT, "stats_meme", "aportes.json")
 _MEME_POSICAO_FILE = os.path.join(_ROOT, "posicoes", "posicao_meme.json")
+_MEME_RESERVA_FILE = os.path.join(_ROOT, "stats_meme", "reserva_meme.json")
 
 
 def _meme_pid():
@@ -228,6 +229,23 @@ def get_stats_dia(data: str = Query(default=None)):
     resumo = calcular_resumo(stats)
     resumo["data"] = data
     return resumo
+
+
+@router.get("/reserva", dependencies=[Depends(_verificar_token)])
+def get_reserva():
+    padrao = {
+        "pnl_liquido_pendente_usdt": 0.0,
+        "reserva_isolada_usdt": 0.0,
+        "capital_reinvestido_usdt": 0.0,
+        "historico": [],
+    }
+    if not os.path.exists(_MEME_RESERVA_FILE):
+        return padrao
+    with open(_MEME_RESERVA_FILE) as f:
+        dados = json.load(f)
+    for k, v in padrao.items():
+        dados.setdefault(k, v)
+    return dados
 
 
 @router.get("/aportes", dependencies=[Depends(_verificar_token)])
