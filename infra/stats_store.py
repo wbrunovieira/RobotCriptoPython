@@ -28,6 +28,25 @@ def _carregar(arquivo: str) -> dict:
         return json.load(f)
 
 
+def _carregar_ou_iniciar(arquivo: str) -> dict:
+    """Carrega o arquivo de stats; se não existir, inicializa com estrutura vazia.
+
+    Necessário quando registrar_venda/registrar_compra é chamado antes de
+    iniciar_stats_do_dia (ex: stop dispara após meia-noite, antes do próximo ciclo).
+    """
+    if os.path.exists(arquivo):
+        return _carregar(arquivo)
+    hoje = date.today().strftime("%Y-%m-%d")
+    dados = {
+        "data": hoje,
+        "saldo_inicial_brl": 0.0,
+        "parametros": {},
+        "operacoes": [],
+    }
+    _salvar(dados, arquivo)
+    return dados
+
+
 def iniciar_stats_do_dia(
     saldo_inicial_brl: float,
     arquivo: str = None,
@@ -62,7 +81,7 @@ def registrar_compra(
     """Registra uma operação de compra no stats do dia."""
     if arquivo is None:
         arquivo = _caminho_padrao()
-    dados = _carregar(arquivo)
+    dados = _carregar_ou_iniciar(arquivo)
     op = {
         "tipo": "COMPRA",
         "preco": preco,
@@ -95,7 +114,7 @@ def registrar_venda(
     """Registra uma operação de venda com cálculo de lucro/prejuízo."""
     if arquivo is None:
         arquivo = _caminho_padrao()
-    dados = _carregar(arquivo)
+    dados = _carregar_ou_iniciar(arquivo)
 
     custo_brl = next(
         (op["total_brl"] for op in reversed(dados["operacoes"])

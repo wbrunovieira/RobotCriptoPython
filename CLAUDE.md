@@ -15,6 +15,7 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000   # REST API
 Frontend (Node.js/pnpm):
 ```bash
 cd frontend && pnpm dev        # dashboard at http://localhost:3000
+cd frontend && pnpm build      # production build
 ```
 
 Requires a `.env` file with:
@@ -22,6 +23,17 @@ Requires a `.env` file with:
 KEY_BINANCE=<api_key>
 SECRET_BINANCE=<api_secret>
 API_TOKEN=<api_token>
+
+# WhatsApp notifications via Evolution API (optional)
+EVOLUTION_URL=<evolution_api_base_url>
+EVOLUTION_API_KEY=<evolution_api_key>
+EVOLUTION_INSTANCE=<instance_name>
+WHATSAPP_NUMBER=<phone_with_country_code>
+```
+
+Frontend requires `frontend/.env.local`:
+```
+NEXT_PUBLIC_API_URL=http://localhost:8000   # points to FastAPI backend
 ```
 
 ## Running Tests
@@ -89,7 +101,13 @@ analysis/       — Offline tools (not used in production)
 
 **Entry points**: `robo_cripto.py` → `bots/brl/robo.py`; `robo_meme.py` → `bots/meme/robo.py` — both run infinite loops.
 
-**Position state**: BRL bot persists to `posicao_{SIMBOLO}.json` (root); Meme bot to `posicoes/posicao_meme.json`. Stats directories: `stats/` (BRL) and `stats_meme/` (Meme).
+**Position state**: BRL bot persists to `posicoes/posicao_{SIMBOLO}.json`; Meme bot to `posicoes/posicao_meme.json`. Stats directories: `stats/` (BRL) and `stats_meme/` (Meme). Runtime files: `run/status.json` (PID + last cycle), `run/bloqueio_portfolio.json`, `run/cooldown_pares.json`. Reserve: `reserva/estado.json`.
+
+**Bot runtime loop**: `ciclo()` runs full strategy every `INTERVALO_ESTRATEGIA`; between cycles, a tighter loop checks stops every `INTERVALO_MONITORAMENTO` (60s) without re-evaluating signals. SIGINT/SIGTERM sets `_parar` flag — the bot finishes its current cycle before exiting. On network/Binance errors the bot retries with exponential backoff (up to 300s) and sends a WhatsApp alert after 3 consecutive failures.
+
+**Binance client**: `criar_cliente_sincronizado()` (`infra/binance_client.py`) syncs the local clock against Binance server time to prevent `-1022` signature errors. Always use this factory instead of instantiating `Client` directly.
+
+**API auth**: all FastAPI routes require `Authorization: Bearer {API_TOKEN}` (single shared token from env).
 
 **BRL strategy**: MA9/MA21 crossover + RSI reversal, ADX filter, ATR-based trailing stop, break-even, take-profit, weekend volume filter, daily loss limit, portfolio stop.
 
