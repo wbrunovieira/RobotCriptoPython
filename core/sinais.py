@@ -84,6 +84,17 @@ def _quinta_feira_bloqueada(agora: pd.Timestamp = None) -> bool:
     return agora.dayofweek == 3  # 3 = quinta-feira
 
 
+def _quarta_ou_domingo_bloqueado(agora: pd.Timestamp = None) -> bool:
+    """Retorna True se hoje é quarta-feira ou domingo.
+
+    Análise de 51 trades (mar–abr 2026): quarta 0/10 acerto (pior dia),
+    domingo 3/8 acerto com -R$37. Terça é o único dia consistentemente lucrativo (5/6).
+    """
+    if agora is None:
+        agora = pd.Timestamp.now(tz="America/Sao_Paulo")
+    return agora.dayofweek in (2, 6)  # 2 = quarta, 6 = domingo
+
+
 def btc_acima_ma50(dados_btc: pd.DataFrame) -> bool:
     """Retorna True se o BTC está acima da MA50 de 4h — tendência global de alta.
 
@@ -107,6 +118,7 @@ def avaliar_sinal(
     agora: pd.Timestamp = None,
     reentrada: bool = False,
     bloqueio_quinta: bool = False,
+    bloqueio_quarta_domingo: bool = False,
 ) -> str | None:
     """Avalia o sinal de compra ou venda com base em médias móveis e RSI.
 
@@ -145,6 +157,11 @@ def avaliar_sinal(
     # Quinta-feira: bloqueia novas entradas (padrão de queda ~80% das quintas, mar-abr 2026)
     if bloqueio_quinta and _quinta_feira_bloqueada(agora):
         logger.info("Filtro quinta-feira: novas compras bloqueadas (BOT_BLOQUEIO_QUINTA_FEIRA=true).")
+        return None
+
+    # Quarta e domingo: 0/10 e 3/8 acerto respectivamente (análise mar-abr 2026)
+    if bloqueio_quarta_domingo and _quarta_ou_domingo_bloqueado(agora):
+        logger.info("Filtro quarta/domingo: novas compras bloqueadas (BOT_BLOQUEIO_QUARTA_DOMINGO=true).")
         return None
 
     # Fim de semana: permite entrada, mas exige volume 1.5x acima da média

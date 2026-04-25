@@ -5,7 +5,7 @@ _PARES = [
     {"simbolo": "BTCBRL", "ativo": "BTC", "step_size": "0.00001"},
     {"simbolo": "ETHBRL", "ativo": "ETH", "step_size": "0.0001"},
     {"simbolo": "XRPBRL", "ativo": "XRP", "step_size": "0.1"},
-    {"simbolo": "BNBBRL", "ativo": "BNB", "step_size": "0.001"},
+    # BNBBRL removido: -R$48,25 em 13 trades (31% acerto) — pior par da carteira
 ]
 
 

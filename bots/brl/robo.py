@@ -47,7 +47,7 @@ from bots.brl.config import (
     BOT_ID, PERIODO_CANDLE, STOP_PCT, TAKE_PROFIT_PCT, TETO_SALDO_PCT,
     MAX_POSICOES, PERCENTUAL_COMPRA, STOP_PORTFOLIO_PCT, BLOQUEIO_PORTFOLIO_FILE,
     MAX_TENTATIVAS, INTERVALO_MONITORAMENTO, INTERVALO_ESTRATEGIA,
-    _intervalo_estrategia_min, BLOQUEIO_QUINTA_FEIRA, COOLDOWN_STOP_HORAS,
+    _intervalo_estrategia_min, BLOQUEIO_QUINTA_FEIRA, BLOQUEIO_QUARTA_DOMINGO, COOLDOWN_STOP_HORAS,
     FILTRO_TENDENCIA_BTC,
 )
 
@@ -555,7 +555,8 @@ def monitorar_stop_par(cliente, par):
                     return
             dados = pegando_dados(cliente, simbolo, PERIODO_CANDLE)
             if not dados.empty:
-                sinal = avaliar_sinal(dados, posicao=False, reentrada=True, bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA)
+                sinal = avaliar_sinal(dados, posicao=False, reentrada=True, bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA,
+                                     bloqueio_quarta_domingo=BLOQUEIO_QUARTA_DOMINGO)
                 if sinal == "COMPRAR":
                     stop_atr = stop_pct_por_atr(dados, stop_pct_min=STOP_PCT)
                     saldo_reentrada = min(
@@ -651,7 +652,8 @@ def ciclo_par(cliente, par, saldo_brl, saldo_ativo, dados_btc: pd.DataFrame = No
 
     pares_abertos = contar_posicoes_abertas(listar_pares())
     sinal = avaliar_sinal(dados, posicao, pares_abertos=pares_abertos, max_posicoes=MAX_POSICOES,
-                          bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA)
+                          bloqueio_quinta=BLOQUEIO_QUINTA_FEIRA,
+                          bloqueio_quarta_domingo=BLOQUEIO_QUARTA_DOMINGO)
 
     if sinal == "COMPRAR":
         if FILTRO_TENDENCIA_BTC and dados_btc is not None and not btc_acima_ma50(dados_btc):
