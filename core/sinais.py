@@ -14,7 +14,7 @@ _MIN_CROSSOVER_SEPARATION_PCT = 0.5   # % mínimo de separação MA9/MA21 para c
 _REENTRADA_SEP_MIN_PCT        = 0.2   # % mínimo de separação em modo reentrada
 _VENDA_SEP_MIN_PCT            = 0.3   # % mínimo de separação para confirmar sinal de venda
 _MA50_SLOPE_MAX_QUEDA_PCT     = -0.2  # % queda da MA50 em 3 candles para bloquear entrada
-_ADX_TENDENCIA_MIN            = 20    # ADX mínimo para confirmar tendência
+_ADX_TENDENCIA_MIN            = 28    # ADX mínimo para confirmar tendência (análise empírica: 44% stops em <6h em mercados ADX<28)
 
 # Parâmetros de volume
 _VOL_MULTIPLICADOR_NORMAL     = 1.0   # filtro de volume em dias úteis

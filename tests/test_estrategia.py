@@ -81,13 +81,8 @@ def test_calcular_quantidade_nao_excede_saldo():
 # --- Avaliação de Sinal ---
 
 def test_sinal_compra_tendencia_alta():
-    # Alta consistente: +3.0 / -2.0 → RSI ≈ 60, separação MA9/MA21 > 0.5%
-    precos = []
-    base = 400.0
-    for i in range(60):
-        base += 3.0 if i % 2 == 0 else -2.0
-        precos.append(base)
-    dados = pd.DataFrame({"fechamento": precos})
+    # Alta consistente com OHLCV: padrão +4/-2 gera ADX ≈ 33 (> limiar 28), RSI ≈ 67
+    dados = _make_dados_alta_forte(80)
     segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
     sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
     assert sinal == "COMPRAR"
@@ -694,19 +689,51 @@ def test_venda_nao_acionada_quando_ma9_acima_ma21():
 # ---------------------------------------------------------------------------
 
 def test_sinal1_nao_bloqueado_em_mercado_tendencia_forte():
-    """Em tendência forte (ADX > 20), Signal 1 deve poder entrar."""
+    """Em tendência forte (ADX > 28), Signal 1 deve poder entrar."""
     dados = _make_dados_alta_forte(80)
     adx = calcular_adx(dados)
     segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
     sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
-    if adx >= 20:
+    if adx >= 28:
         assert sinal == "COMPRAR"
-    # Se ADX < 20 por acidente de dataset, o bloqueio é correto — não falha
+    # Se ADX < 28 por acidente de dataset, o bloqueio é correto — não falha
 
 
 def test_sinal1_bloqueado_por_adx_baixo(monkeypatch):
-    """Se calcular_adx retornar < 20, Signal 1 é bloqueado mesmo com crossover válido."""
+    """Se calcular_adx retornar < 28, Signal 1 é bloqueado mesmo com crossover válido."""
     monkeypatch.setattr("core.sinais.calcular_adx", lambda dados, periodo=14: 15.0)
+    dados = _make_dados_alta_forte(80)
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    assert sinal is None
+
+
+def test_sinal1_bloqueado_por_adx_zona_morta(monkeypatch):
+    """ADX entre 20 e 27 (zona morta) deve bloquear entrada — tendência insuficiente.
+
+    Antes do threshold ser 20, ADX=24 permitia entrada. Com threshold=28
+    esse mercado de tendência fraca é bloqueado, evitando entradas em ruído.
+    Análise empírica: 44% dos stops batem em <6h — maioria em mercados laterais.
+    """
+    monkeypatch.setattr("core.sinais.calcular_adx", lambda dados, periodo=14: 24.0)
+    dados = _make_dados_alta_forte(80)
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    assert sinal is None
+
+
+def test_sinal1_permitido_exatamente_no_novo_minimo(monkeypatch):
+    """ADX exatamente em 28 deve permitir entrada (limiar inclusivo)."""
+    monkeypatch.setattr("core.sinais.calcular_adx", lambda dados, periodo=14: 28.0)
+    dados = _make_dados_alta_forte(80)
+    segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
+    sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)
+    assert sinal == "COMPRAR"
+
+
+def test_sinal1_bloqueado_adx_27_limite_inferior(monkeypatch):
+    """ADX=27 (um abaixo do limiar) deve bloquear — confirma fronteira exata."""
+    monkeypatch.setattr("core.sinais.calcular_adx", lambda dados, periodo=14: 27.0)
     dados = _make_dados_alta_forte(80)
     segunda_manha = pd.Timestamp("2026-03-30 10:00:00", tz="America/Sao_Paulo")
     sinal = avaliar_sinal(dados, posicao=False, agora=segunda_manha)

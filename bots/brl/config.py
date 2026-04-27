@@ -3,8 +3,8 @@ import os
 
 BOT_ID = os.getenv("BOT_ID", "MACross1")
 PERIODO_CANDLE = os.getenv("BOT_PERIODO_CANDLE", "1h")
-STOP_PCT = float(os.getenv("BOT_STOP_PCT", "0.015"))
-TAKE_PROFIT_PCT = float(os.getenv("BOT_TAKE_PROFIT_PCT", "0.02"))
+STOP_PCT = float(os.getenv("BOT_STOP_PCT", "0.05"))
+TAKE_PROFIT_PCT = float(os.getenv("BOT_TAKE_PROFIT_PCT", "0.08"))
 TETO_SALDO_PCT = float(os.getenv("BOT_TETO_SALDO_PCT", "0.60"))
 MAX_POSICOES = int(os.getenv("BOT_MAX_POSICOES", "3"))
 PERCENTUAL_COMPRA = 0.90
